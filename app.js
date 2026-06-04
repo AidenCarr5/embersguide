@@ -683,6 +683,16 @@ function renderUnitTrackerTitle() {
   document.title = title;
 }
 
+function rememberSelectedDriveFile(file) {
+  if (!file?.id) return;
+  const sync = driveSyncSettings();
+  sync.fileId = file.id;
+  sync.fileName = file.name || sync.fileName || DRIVE_SYNC_FILE_NAME;
+  sync.remoteModifiedTime = file.modifiedTime || sync.remoteModifiedTime || "";
+  sync.webViewLink = file.webViewLink || sync.webViewLink || "";
+  sync.autoPush = true;
+}
+
 function renderDriveSyncSettings() {
   const sync = driveSyncSettings();
   renderUnitTrackerTitle();
@@ -939,17 +949,17 @@ function renderLoginDriveChooser(files = []) {
 }
 
 async function loadDriveFileById(fileId) {
-  const sync = driveSyncSettings();
   const selected = driveTrackerFiles.find((file) => file.id === fileId);
-  sync.fileId = fileId;
-  sync.fileName = selected?.name || sync.fileName || DRIVE_SYNC_FILE_NAME;
-  sync.remoteModifiedTime = selected?.modifiedTime || sync.remoteModifiedTime || "";
-  sync.webViewLink = selected?.webViewLink || sync.webViewLink || "";
-  sync.autoPush = true;
+  rememberSelectedDriveFile(selected || { id: fileId });
   suppressDriveAutoPush = true;
   saveState();
   suppressDriveAutoPush = false;
   await pullDriveSyncFile();
+  rememberSelectedDriveFile(selected || { id: fileId });
+  suppressDriveAutoPush = true;
+  saveState();
+  suppressDriveAutoPush = false;
+  renderDriveSyncSettings();
   switchTab("planning");
   showToast("Latest tracker loaded from Google Drive.");
 }
@@ -1019,14 +1029,10 @@ async function createDriveSyncFile(fileName = "") {
   });
   const metadataResult = await response.json();
   const sync = driveSyncSettings();
-  sync.fileId = metadataResult.id;
+  rememberSelectedDriveFile({ ...metadataResult, name: metadataResult.name || finalName });
   sync.folderId = folder.id;
   sync.folderName = folder.name || sync.folderName || DRIVE_SYNC_FOLDER_NAME;
-  sync.fileName = metadataResult.name || finalName;
-  sync.remoteModifiedTime = metadataResult.modifiedTime || "";
   sync.lastPushedAt = new Date().toISOString();
-  sync.webViewLink = metadataResult.webViewLink || "";
-  sync.autoPush = true;
   suppressDriveAutoPush = true;
   saveState();
   suppressDriveAutoPush = false;
@@ -1041,6 +1047,7 @@ async function pullDriveSyncFile() {
   if (!sync.fileId) throw new Error("Add or create a Google Drive sync file first.");
   setDriveSyncStatus("Pulling latest data from Google Drive...", "Working");
   const metadata = await driveFileMetadata(sync.fileId);
+  const selected = driveTrackerFiles.find((file) => file.id === sync.fileId);
   const response = await driveFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(sync.fileId)}?alt=media`);
   const remote = await response.json();
   const localSync = { ...driveSyncSettings() };
@@ -1049,11 +1056,11 @@ async function pullDriveSyncFile() {
     ...(state.settings.driveSync || {}),
     ...localSync,
     fileId: localSync.fileId || metadata.id,
-    fileName: metadata.name || localSync.fileName || DRIVE_SYNC_FILE_NAME,
+    fileName: selected?.name || metadata.name || localSync.fileName || DRIVE_SYNC_FILE_NAME,
     folderId: localSync.folderId || metadata.parents?.[0] || "",
-    remoteModifiedTime: metadata.modifiedTime || "",
+    remoteModifiedTime: selected?.modifiedTime || metadata.modifiedTime || "",
     lastPulledAt: new Date().toISOString(),
-    webViewLink: metadata.webViewLink || localSync.webViewLink || "",
+    webViewLink: selected?.webViewLink || metadata.webViewLink || localSync.webViewLink || "",
     autoPush: true,
   };
   suppressDriveAutoPush = true;
@@ -1071,6 +1078,7 @@ async function pushDriveSyncFile(options = {}) {
   try {
     setDriveSyncStatus("Checking Google Drive before upload...", "Working");
     const metadata = await driveFileMetadata(sync.fileId);
+    const selected = driveTrackerFiles.find((file) => file.id === sync.fileId);
     const remoteChanged = sync.remoteModifiedTime && metadata.modifiedTime && metadata.modifiedTime > sync.remoteModifiedTime;
     if (remoteChanged && options.auto) {
       setDriveSyncStatus("Google Drive has newer data. Pull latest or manually push to overwrite.", "Needs review");
@@ -1087,11 +1095,13 @@ async function pushDriveSyncFile(options = {}) {
       body: driveSyncPayload(),
     });
     const updated = await response.json();
-    sync.remoteModifiedTime = updated.modifiedTime || metadata.modifiedTime || "";
-    sync.fileName = updated.name || metadata.name || sync.fileName || DRIVE_SYNC_FILE_NAME;
+    rememberSelectedDriveFile({
+      id: updated.id || metadata.id || sync.fileId,
+      name: selected?.name || updated.name || metadata.name || sync.fileName || DRIVE_SYNC_FILE_NAME,
+      modifiedTime: updated.modifiedTime || metadata.modifiedTime || "",
+      webViewLink: updated.webViewLink || metadata.webViewLink || sync.webViewLink || "",
+    });
     sync.lastPushedAt = new Date().toISOString();
-    sync.webViewLink = updated.webViewLink || metadata.webViewLink || sync.webViewLink || "";
-    sync.autoPush = true;
     suppressDriveAutoPush = true;
     saveState();
     suppressDriveAutoPush = false;
@@ -4393,14 +4403,8 @@ $("#loginDriveChooser").addEventListener("click", async (event) => {
 });
 
 $("#driveFileSelect")?.addEventListener("change", (event) => {
-  const sync = driveSyncSettings();
-  sync.fileId = event.target.value;
-  const selected = driveTrackerFiles.find((file) => file.id === sync.fileId);
-  if (selected) {
-    sync.fileName = selected.name || sync.fileName || DRIVE_SYNC_FILE_NAME;
-    sync.remoteModifiedTime = selected.modifiedTime || sync.remoteModifiedTime || "";
-    sync.webViewLink = selected.webViewLink || sync.webViewLink || "";
-  }
+  const selected = driveTrackerFiles.find((file) => file.id === event.target.value);
+  rememberSelectedDriveFile(selected || { id: event.target.value });
   suppressDriveAutoPush = true;
   saveState();
   suppressDriveAutoPush = false;
