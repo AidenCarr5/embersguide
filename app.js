@@ -1,4 +1,6 @@
 const STORE_KEY = "ember-badge-studio-v1";
+const TRACKER_APP_ID = "embers-tracker";
+const TRACKER_SCHEMA_VERSION = 1;
 const DRIVE_SYNC_FILE_NAME = "Embers Tracker Sync.json";
 const DRIVE_SYNC_FOLDER_NAME = "Embers Tracker Files";
 const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive";
@@ -516,6 +518,24 @@ function normalizeState(value) {
   return remapToOfficialBadges(normalized, Array.isArray(value.badges) ? value.badges : []);
 }
 
+function trackerPayloadObject() {
+  return {
+    ...state,
+    app: TRACKER_APP_ID,
+    schemaVersion: TRACKER_SCHEMA_VERSION,
+    syncedAt: new Date().toISOString(),
+  };
+}
+
+function looksLikeTrackerPayload(value) {
+  if (!value || typeof value !== "object") return false;
+  if (value.app === TRACKER_APP_ID) return true;
+  const hasCoreArrays = ["kids", "badges", "meetings"].every((key) => Array.isArray(value[key]));
+  const hasTrackerSettings = value.settings && typeof value.settings === "object" && value.settings.driveSync;
+  const hasTrackerCollections = Array.isArray(value.attendanceRecords) && Array.isArray(value.weeklyPlans);
+  return hasCoreArrays && (hasTrackerSettings || hasTrackerCollections);
+}
+
 function remapToOfficialBadges(data, previousBadges = []) {
   const officialBadges = officialBadgesWithSavedCriteria(previousBadges);
   const customBadges = previousBadges.filter(isCustomBadge);
@@ -820,16 +840,16 @@ async function ensureDriveSyncFolder() {
 async function findDriveSyncFiles() {
   const sync = driveSyncSettings();
   const folder = await ensureDriveSyncFolder();
-  const folderQuery = `'${driveQueryEscape(folder.id)}' in parents and mimeType = 'application/json' and trashed = false`;
+  const folderQuery = { q: `'${driveQueryEscape(folder.id)}' in parents and mimeType = 'application/json' and trashed = false`, needsTrackerCheck: false };
   const legacyName = driveQueryEscape(DRIVE_SYNC_FILE_NAME);
-  const legacyQuery = `name = '${legacyName}' and mimeType = 'application/json' and trashed = false`;
-  const sharedQuery = `sharedWithMe = true and mimeType = 'application/json' and trashed = false`;
+  const legacyQuery = { q: `name = '${legacyName}' and mimeType = 'application/json' and trashed = false`, needsTrackerCheck: true };
+  const sharedQuery = { q: `sharedWithMe = true and mimeType = 'application/json' and trashed = false`, needsTrackerCheck: true };
   const queries = [folderQuery, sharedQuery, legacyQuery];
   const seen = new Set();
   const files = [];
-  for (const q of queries) {
+  for (const query of queries) {
     const params = new URLSearchParams({
-      q,
+      q: query.q,
       fields: "files(id,name,modifiedTime,owners(displayName,emailAddress),webViewLink,parents)",
       orderBy: "modifiedTime desc",
       pageSize: "50",
@@ -838,12 +858,12 @@ async function findDriveSyncFiles() {
     });
     const response = await driveFetch(`https://www.googleapis.com/drive/v3/files?${params.toString()}`);
     const result = await response.json();
-    (result.files || []).forEach((file) => {
-      if (!seen.has(file.id)) {
-        seen.add(file.id);
-        files.push(file);
-      }
-    });
+    for (const file of result.files || []) {
+      if (seen.has(file.id)) continue;
+      seen.add(file.id);
+      if (query.needsTrackerCheck && !(await isDriveTrackerFile(file.id))) continue;
+      files.push(file);
+    }
   }
   driveTrackerFiles = files.sort((a, b) => String(b.modifiedTime || "").localeCompare(String(a.modifiedTime || "")));
   if (!driveTrackerFiles.some((file) => file.id === sync.fileId) && sync.fileId) {
@@ -856,6 +876,16 @@ async function findDriveSyncFiles() {
   }
   renderDriveSyncSettings();
   return driveTrackerFiles;
+}
+
+async function isDriveTrackerFile(fileId) {
+  try {
+    const response = await driveFetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`);
+    if (!response.ok) return false;
+    return looksLikeTrackerPayload(await response.json());
+  } catch {
+    return false;
+  }
 }
 
 function renderLoginDriveChooser(files = []) {
@@ -929,7 +959,7 @@ async function tryRememberedGoogleLogin() {
 }
 
 function driveSyncPayload() {
-  return JSON.stringify({ ...state, syncedAt: new Date().toISOString() }, null, 2);
+  return JSON.stringify(trackerPayloadObject(), null, 2);
 }
 
 async function createDriveSyncFile(fileName = "") {
@@ -3502,7 +3532,7 @@ function downloadFile(filename, content, type) {
 function exportJson() {
   downloadFile(
     `ember-badge-studio-backup-${today()}.json`,
-    JSON.stringify(state, null, 2),
+    JSON.stringify(trackerPayloadObject(), null, 2),
     "application/json"
   );
 }
