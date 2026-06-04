@@ -15,7 +15,7 @@
         <img class="guides-logo-img" src="./assets/girl-guides-logo.png" alt="Girl Guides" />
         <div>
           <p class="eyebrow">Group badge tracker</p>
-          <h1>Embers Tracker</h1>
+          <h1 id="appTitle">Embers Tracker</h1>
         </div>
       </div>
       <div class="header-actions">
@@ -45,12 +45,12 @@
             <img class="guides-logo-img" src="./assets/girl-guides-logo.png" alt="Girl Guides" />
             <div>
               <p class="eyebrow">Google Drive sync</p>
-              <h1>Embers Tracker</h1>
+              <h1 id="loginAppTitle">Embers Tracker</h1>
             </div>
           </div>
           <div class="login-copy">
             <h2>Sign in to load the latest tracker</h2>
-            <p class="muted">Connect with Google and choose the unit tracker file from Drive.</p>
+            <p class="muted">Connect with Google and choose the unit tracker from Drive.</p>
           </div>
           <div class="data-actions">
             <button class="primary-button" id="loginDriveLoad" type="button">Sign in with Google</button>
@@ -474,8 +474,8 @@
         <section class="surface">
           <div class="section-heading">
             <div>
-              <h2>Google Drive tracker files</h2>
-              <span class="small-note">Choose a unit file, or create a new tracker JSON inside the Embers Tracker Files folder. Shared leaders need editor access to the tracker file or folder.</span>
+              <h2>Unit trackers</h2>
+              <span class="small-note">Choose a unit tracker, or create a new unit tracker JSON inside the Embers Tracker Files folder. Shared leaders need editor access to the unit tracker or folder.</span>
             </div>
             <span class="status-pill" id="driveSyncState">Not connected</span>
           </div>
@@ -485,7 +485,7 @@
               <input id="driveClientId" type="text" />
             </label>
             <label>
-              Current tracker file
+              Unit tracker
               <select id="driveFileSelect"></select>
             </label>
             <label>
@@ -505,7 +505,7 @@
             </label>
           </div>
           <div class="data-actions">
-            <button class="quiet-button" id="driveRefreshFiles" type="button">Refresh tracker files</button>
+            <button class="quiet-button" id="driveRefreshFiles" type="button">Refresh unit trackers</button>
             <button class="quiet-button" id="driveCreateNamedFile" type="button">Create named tracker</button>
             <button class="quiet-button" id="drivePullFile" type="button">Pull selected</button>
             <button class="quiet-button" id="drivePushFile" type="button">Push current data</button>

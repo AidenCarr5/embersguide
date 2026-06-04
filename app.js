@@ -658,8 +658,24 @@ function setDriveSyncStatus(message, stateLabel = "") {
   if (badge) badge.textContent = stateLabel || (driveAccessToken ? "Connected" : "Not connected");
 }
 
+function unitTrackerDisplayName() {
+  const sync = driveSyncSettings();
+  const name = String(sync.fileName || "").trim().replace(/\.json$/i, "");
+  return sync.fileId && name ? name : "Embers Tracker";
+}
+
+function renderUnitTrackerTitle() {
+  const title = unitTrackerDisplayName();
+  const appTitle = $("#appTitle");
+  const loginTitle = $("#loginAppTitle");
+  if (appTitle) appTitle.textContent = title;
+  if (loginTitle) loginTitle.textContent = title;
+  document.title = title;
+}
+
 function renderDriveSyncSettings() {
   const sync = driveSyncSettings();
+  renderUnitTrackerTitle();
   const clientId = $("#driveClientId");
   if (clientId) clientId.value = sync.clientId || "";
   if ($("#driveFileId")) $("#driveFileId").value = sync.fileId || "";
@@ -672,14 +688,14 @@ function renderDriveSyncSettings() {
         : driveTrackerFiles;
     fileSelect.innerHTML = files.length
       ? files.map((file) => `<option value="${escapeAttr(file.id)}">${escapeHtml(file.name || DRIVE_SYNC_FILE_NAME)}${file.modifiedTime ? ` - ${escapeHtml(formatDateTime(file.modifiedTime))}` : ""}</option>`).join("")
-      : `<option value="">No tracker files loaded</option>`;
+      : `<option value="">No unit trackers loaded</option>`;
     fileSelect.value = sync.fileId || "";
   }
   if ($("#driveAutoPull")) $("#driveAutoPull").checked = sync.autoPull !== false;
   if ($("#driveAutoPush")) $("#driveAutoPush").checked = Boolean(sync.autoPush);
   const pieces = [];
   if (sync.folderId) pieces.push("Drive folder linked");
-  if (sync.fileId) pieces.push(`Tracker: ${sync.fileName || DRIVE_SYNC_FILE_NAME}`);
+  if (sync.fileId) pieces.push(`Unit tracker: ${sync.fileName || DRIVE_SYNC_FILE_NAME}`);
   if (sync.autoPush && sync.fileId) pieces.push("Auto-push on");
   if (sync.lastPulledAt) pieces.push(`Last pull: ${formatDateTime(sync.lastPulledAt)}`);
   if (sync.lastPushedAt) pieces.push(`Last push: ${formatDateTime(sync.lastPushedAt)}`);
@@ -893,7 +909,7 @@ function renderLoginDriveChooser(files = []) {
   if (!chooser) return;
   chooser.innerHTML = `
     <div class="drive-file-list">
-      <h3>${files.length ? "Choose a tracker file" : "Create a tracker file"}</h3>
+      <h3>${files.length ? "Choose a unit tracker" : "Create a unit tracker"}</h3>
       ${files.length ? `
         <div class="drive-file-options">
           ${files.map((file) => `
@@ -903,7 +919,7 @@ function renderLoginDriveChooser(files = []) {
             </button>
           `).join("")}
         </div>
-      ` : `<p class="muted">No tracker JSON files were found in the ${escapeHtml(DRIVE_SYNC_FOLDER_NAME)} folder.</p>`}
+      ` : `<p class="muted">No unit tracker JSON files were found in the ${escapeHtml(DRIVE_SYNC_FOLDER_NAME)} folder.</p>`}
       <div class="drive-create-inline">
         <input id="loginDriveNewFileName" class="compact-input" type="text" placeholder="New unit name, e.g. Tuesday Embers" />
         <button class="quiet-button" id="loginDriveCreate" type="button">Create named tracker</button>
@@ -938,10 +954,10 @@ async function signInAndFindDriveFile() {
   $("#loginDriveChooser").innerHTML = "";
   setDriveSyncStatus("Signing in with Google...", "Working");
   await requestDriveAccessToken("consent");
-  setDriveSyncStatus(`Looking for tracker files in ${DRIVE_SYNC_FOLDER_NAME}...`, "Working");
+  setDriveSyncStatus(`Looking for unit trackers in ${DRIVE_SYNC_FOLDER_NAME}...`, "Working");
   const files = await findDriveSyncFiles();
   renderLoginDriveChooser(files);
-  setDriveSyncStatus(files.length ? "Choose the tracker file for this unit." : "No tracker file found. Create one, or ask the owner to share it with this Google account.", files.length ? "Choose file" : "No file found");
+  setDriveSyncStatus(files.length ? "Choose the unit tracker to load." : "No unit tracker found. Create one, or ask the owner to share it with this Google account.", files.length ? "Choose unit" : "No unit found");
 }
 
 async function tryRememberedGoogleLogin() {
@@ -4387,11 +4403,11 @@ $("#driveRefreshFiles")?.addEventListener("click", async () => {
     await ensureDriveToken(driveAccessToken ? "" : "consent");
     setDriveSyncStatus(`Refreshing ${DRIVE_SYNC_FOLDER_NAME}...`, "Working");
     const files = await findDriveSyncFiles();
-    setDriveSyncStatus(files.length ? "Tracker files refreshed. Choose the unit to load." : "No tracker files found. Create a named tracker.", files.length ? "Connected" : "No file found");
-    showToast("Tracker files refreshed.");
+    setDriveSyncStatus(files.length ? "Unit trackers refreshed. Choose the unit to load." : "No unit trackers found. Create a named unit tracker.", files.length ? "Connected" : "No unit found");
+    showToast("Unit trackers refreshed.");
   } catch (error) {
     setDriveSyncStatus(`Refresh failed: ${error.message}`, "Needs setup");
-    showToast("Could not refresh tracker files.");
+    showToast("Could not refresh unit trackers.");
   }
 });
 
@@ -4401,10 +4417,10 @@ $("#driveCreateNamedFile")?.addEventListener("click", async () => {
     await ensureDriveToken(driveAccessToken ? "" : "consent");
     const created = await createDriveSyncFile($("#driveNewFileName")?.value || "");
     $("#driveNewFileName").value = "";
-    showToast(`Created ${created.name || "tracker file"}.`);
+    showToast(`Created ${created.name || "unit tracker"}.`);
   } catch (error) {
     setDriveSyncStatus(`Create failed: ${error.message}`, "Needs setup");
-    showToast("Could not create tracker file.");
+    showToast("Could not create unit tracker.");
   }
 });
 
@@ -4413,10 +4429,10 @@ $("#drivePullFile")?.addEventListener("click", async () => {
     saveDriveSyncSettingsFromForm();
     await ensureDriveToken(driveAccessToken ? "" : "consent");
     await pullDriveSyncFile();
-    showToast("Selected tracker pulled.");
+    showToast("Selected unit tracker pulled.");
   } catch (error) {
     setDriveSyncStatus(`Pull failed: ${error.message}`, "Needs setup");
-    showToast("Could not pull tracker file.");
+    showToast("Could not pull unit tracker.");
   }
 });
 
@@ -4425,10 +4441,10 @@ $("#drivePushFile")?.addEventListener("click", async () => {
     saveDriveSyncSettingsFromForm();
     await ensureDriveToken(driveAccessToken ? "" : "consent");
     await pushDriveSyncFile();
-    showToast("Current tracker pushed.");
+    showToast("Current unit tracker pushed.");
   } catch (error) {
     setDriveSyncStatus(`Push failed: ${error.message}`, "Needs setup");
-    showToast("Could not push tracker file.");
+    showToast("Could not push unit tracker.");
   }
 });
 
