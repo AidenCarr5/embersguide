@@ -660,7 +660,8 @@ function setDriveSyncStatus(message, stateLabel = "") {
 
 function unitTrackerDisplayName() {
   const sync = driveSyncSettings();
-  const name = String(sync.fileName || "").trim().replace(/\.json$/i, "");
+  const selected = driveTrackerFiles.find((file) => file.id === sync.fileId);
+  const name = String(selected?.name || sync.fileName || "").trim();
   return sync.fileId && name ? name : "Embers Tracker";
 }
 
