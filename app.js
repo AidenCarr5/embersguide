@@ -661,8 +661,16 @@ function setDriveSyncStatus(message, stateLabel = "") {
 function unitTrackerDisplayName() {
   const sync = driveSyncSettings();
   const selected = driveTrackerFiles.find((file) => file.id === sync.fileId);
-  const name = String(selected?.name || sync.fileName || "").trim();
-  return sync.fileId && name ? name : "Embers Tracker";
+  const fileName = String(selected?.name || sync.fileName || "").trim();
+  if (!sync.fileId || !fileName) return "Embers Tracker";
+  const baseName = fileName
+    .replace(/\.json$/i, "")
+    .replace(/[-_]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!baseName) return "Embers Tracker";
+  const title = baseName.replace(/\b[a-z]/g, (letter) => letter.toUpperCase());
+  return /\btracker\b/i.test(title) ? title : `${title} Tracker`;
 }
 
 function renderUnitTrackerTitle() {
