@@ -67,6 +67,11 @@ button {
   min-width: 0;
 }
 
+.header-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .guides-logo-img {
   width: clamp(210px, 28vw, 380px);
   max-height: 86px;
@@ -249,8 +254,18 @@ body.login-mode main {
   text-align: left;
 }
 
+.drive-file-option.is-current {
+  border-color: var(--guide-blue-dark);
+  background: #e7f7fb;
+  box-shadow: inset 4px 0 0 var(--guide-blue-dark);
+}
+
 .drive-file-option strong {
   color: var(--guide-blue-dark);
+}
+
+.switch-tracker-modal {
+  width: min(720px, 100%);
 }
 
 .drive-file-option span {

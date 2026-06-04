@@ -22,6 +22,7 @@
       <div class="header-actions">
         <button class="quiet-button" id="exportJsonTop" type="button">Export backup</button>
         <button class="quiet-button" data-share-tracker type="button">Share tracker</button>
+        <button class="quiet-button" id="switchTrackerTop" type="button">Switch tracker</button>
         <button class="primary-button" data-tab-target="log" type="button">Log meeting</button>
       </div>
     </header>
@@ -564,10 +565,27 @@
       </form>
     </div>
 
+    <div id="switchTrackerModal" class="modal-backdrop" hidden>
+      <section class="event-modal switch-tracker-modal" role="dialog" aria-modal="true" aria-labelledby="switchTrackerTitle">
+        <header>
+          <div>
+            <p class="eyebrow">Google Drive sync</p>
+            <h2 id="switchTrackerTitle">Switch unit tracker</h2>
+          </div>
+          <button class="text-button" id="closeSwitchTracker" type="button">Close</button>
+        </header>
+        <p class="muted">Choose another unit tracker from Google Drive. The selected tracker will load before you continue.</p>
+        <div id="switchTrackerList" class="drive-file-list"></div>
+        <footer>
+          <button class="quiet-button" id="refreshSwitchTrackers" type="button">Refresh unit trackers</button>
+        </footer>
+      </section>
+    </div>
+
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script src="./excel-attendance-data.js?v=20260604-unit-title"></script>
-    <script src="./excel-progress-data.js?v=20260604-unit-title"></script>
-    <script src="./badge-knowledge.js?v=20260604-unit-title"></script>
-    <script src="./app.js?v=20260604-unit-title"></script>
+    <script src="./excel-attendance-data.js?v=20260604-switcher"></script>
+    <script src="./excel-progress-data.js?v=20260604-switcher"></script>
+    <script src="./badge-knowledge.js?v=20260604-switcher"></script>
+    <script src="./app.js?v=20260604-switcher"></script>
   </body>
 </html>

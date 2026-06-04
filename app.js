@@ -948,6 +948,37 @@ function renderLoginDriveChooser(files = []) {
   `;
 }
 
+function renderSwitchTrackerList(files = driveTrackerFiles) {
+  const list = $("#switchTrackerList");
+  if (!list) return;
+  const sync = driveSyncSettings();
+  list.innerHTML = files.length ? `
+    <div class="drive-file-options">
+      ${files.map((file) => `
+        <button class="drive-file-option ${file.id === sync.fileId ? "is-current" : ""}" data-switch-drive-file="${escapeAttr(file.id)}" type="button">
+          <strong>${escapeHtml(file.name || DRIVE_SYNC_FILE_NAME)}</strong>
+          <span>${file.id === sync.fileId ? "Current unit tracker" : "Load this unit tracker"} - Updated ${escapeHtml(formatDateTime(file.modifiedTime))}</span>
+        </button>
+      `).join("")}
+    </div>
+  ` : `<p class="muted">No unit trackers were found. Create one in Data or ask another leader to share it with this Google account.</p>`;
+}
+
+async function openSwitchTrackerModal() {
+  const modal = $("#switchTrackerModal");
+  if (!modal) return;
+  modal.hidden = false;
+  $("#switchTrackerList").innerHTML = `<p class="muted">Looking for unit trackers...</p>`;
+  await ensureDriveToken(driveAccessToken ? "" : "consent");
+  const files = await findDriveSyncFiles();
+  renderSwitchTrackerList(files);
+}
+
+function closeSwitchTrackerModal() {
+  const modal = $("#switchTrackerModal");
+  if (modal) modal.hidden = true;
+}
+
 async function loadDriveFileById(fileId) {
   const selected = driveTrackerFiles.find((file) => file.id === fileId);
   rememberSelectedDriveFile(selected || { id: fileId });
@@ -3616,6 +3647,16 @@ document.addEventListener("click", (event) => {
     return;
   }
 
+  if (event.target.closest("#switchTrackerTop")) {
+    openSwitchTrackerModal()
+      .catch((error) => {
+        closeSwitchTrackerModal();
+        setDriveSyncStatus(`Switch failed: ${error.message}`, "Needs setup");
+        showToast("Could not load unit trackers.");
+      });
+    return;
+  }
+
   if (event.target.closest("#returnFromItinerary")) {
     switchTab(itineraryReturnTab || "planning");
     return;
@@ -4259,6 +4300,39 @@ $("#closeEventModal").addEventListener("click", closeEventModal);
 
 $("#eventModal").addEventListener("click", (event) => {
   if (event.target.id === "eventModal") closeEventModal();
+});
+
+$("#closeSwitchTracker")?.addEventListener("click", closeSwitchTrackerModal);
+
+$("#switchTrackerModal")?.addEventListener("click", (event) => {
+  if (event.target.id === "switchTrackerModal") closeSwitchTrackerModal();
+});
+
+$("#refreshSwitchTrackers")?.addEventListener("click", async () => {
+  try {
+    $("#switchTrackerList").innerHTML = `<p class="muted">Refreshing unit trackers...</p>`;
+    await ensureDriveToken(driveAccessToken ? "" : "consent");
+    const files = await findDriveSyncFiles();
+    renderSwitchTrackerList(files);
+    showToast("Unit trackers refreshed.");
+  } catch (error) {
+    $("#switchTrackerList").innerHTML = `<p class="muted">Could not refresh unit trackers: ${escapeHtml(error.message)}</p>`;
+  }
+});
+
+$("#switchTrackerList")?.addEventListener("click", async (event) => {
+  const fileButton = event.target.closest("[data-switch-drive-file]");
+  if (!fileButton) return;
+  try {
+    fileButton.disabled = true;
+    fileButton.querySelector("span").textContent = "Loading this unit tracker...";
+    await loadDriveFileById(fileButton.dataset.switchDriveFile);
+    closeSwitchTrackerModal();
+  } catch (error) {
+    setDriveSyncStatus(`Could not switch tracker: ${error.message}`, "Needs setup");
+    showToast("Could not switch unit tracker.");
+    renderSwitchTrackerList();
+  }
 });
 
 $("#eventBadgeSearch").addEventListener("input", renderEventModalBadges);
