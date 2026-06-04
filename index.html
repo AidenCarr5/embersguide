@@ -1,0 +1,572 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Embers Tracker</title>
+    <link rel="icon" type="image/png" href="./assets/girl-guides-trefoil-icon.png" />
+    <link rel="apple-touch-icon" href="./assets/girl-guides-trefoil-icon-1024.png" />
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+  </head>
+  <body class="login-mode">
+    <header class="app-header">
+      <div class="brand-lockup">
+        <img class="guides-logo-img" src="./assets/girl-guides-logo.png" alt="Girl Guides" />
+        <div>
+          <p class="eyebrow">Group badge tracker</p>
+          <h1>Embers Tracker</h1>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button class="quiet-button" id="exportJsonTop" type="button">Export backup</button>
+        <button class="quiet-button" data-share-tracker type="button">Share tracker</button>
+        <button class="primary-button" data-tab-target="log" type="button">Log meeting</button>
+      </div>
+    </header>
+
+    <nav class="tabs" aria-label="Main sections">
+      <button class="tab" data-tab-target="planning" type="button">Planning</button>
+      <button class="tab" data-tab-target="log" type="button">Log meeting</button>
+      <button class="tab" data-tab-target="kid-badges" type="button">Ember Badges</button>
+      <button class="tab" data-tab-target="patrol-points" type="button">Patrol Points</button>
+      <button class="tab" data-tab-target="attendance" type="button">Attendance</button>
+      <button class="tab" data-tab-target="cookies" type="button">Cookies Tracker</button>
+      <button class="tab" data-tab-target="badges" type="button">Create a Badge</button>
+      <button class="tab" data-tab-target="chat" type="button">Chat</button>
+      <button class="tab" data-tab-target="history" type="button">History</button>
+      <button class="tab" data-tab-target="data" type="button">Data</button>
+    </nav>
+
+    <main>
+      <section id="login" class="view is-active login-view">
+        <section class="surface login-panel">
+          <div class="brand-lockup login-brand">
+            <img class="guides-logo-img" src="./assets/girl-guides-logo.png" alt="Girl Guides" />
+            <div>
+              <p class="eyebrow">Google Drive sync</p>
+              <h1>Embers Tracker</h1>
+            </div>
+          </div>
+          <div class="login-copy">
+            <h2>Sign in to load the latest tracker</h2>
+            <p class="muted">Connect with Google and choose the unit tracker file from Drive.</p>
+          </div>
+          <div class="data-actions">
+            <button class="primary-button" id="loginDriveLoad" type="button">Sign in with Google</button>
+            <button class="text-button" id="loginOffline" type="button">Open offline</button>
+          </div>
+          <div id="loginDriveChooser" class="drive-file-chooser"></div>
+          <p class="muted" id="loginSyncStatus">Sign in with Google to load the latest shared tracker.</p>
+        </section>
+      </section>
+
+      <section id="log" class="view">
+        <form id="meetingForm" class="meeting-layout">
+          <section class="surface">
+            <div class="section-heading">
+              <h2>Meeting details</h2>
+              <span class="small-note">Credits selected below go to Embers marked present.</span>
+            </div>
+            <div class="field-grid">
+              <label>
+                Date
+                <input id="meetingDate" name="date" type="date" required />
+              </label>
+              <label>
+                Meeting title
+                <input id="meetingTitle" name="title" type="text" placeholder="Cookie night, camp day, park walk" required />
+              </label>
+            </div>
+            <label>
+              Notes
+              <textarea id="meetingNotes" name="notes" rows="4" placeholder="What happened, supplies used, guest leader, or exceptions"></textarea>
+            </label>
+          </section>
+
+          <section class="surface">
+            <div class="section-heading">
+              <h2>Badges worked on today</h2>
+              <div class="picker-controls">
+                <input id="badgeTileSearch" class="compact-input" type="search" placeholder="Search badges" />
+                <button class="quiet-button" id="selectShownBadges" type="button">Select all shown</button>
+                <button class="quiet-button" id="clearShownBadges" type="button">Clear shown</button>
+              </div>
+            </div>
+            <div id="badgeTilePicker" class="badge-tile-picker"></div>
+          </section>
+
+          <section class="surface">
+            <div class="section-heading">
+              <h2>Patrol points</h2>
+              <span class="small-note">Add points to individual Embers; patrol totals update from their patrols.</span>
+            </div>
+            <div id="patrolPointInputs" class="patrol-point-grid"></div>
+            <div id="patrolPointTotals" class="patrol-standings"></div>
+          </section>
+
+          <section class="surface">
+            <div class="section-heading">
+              <h2>Attendance</h2>
+              <div class="inline-actions">
+                <button class="quiet-button" id="markAllPresent" type="button">All present</button>
+                <button class="quiet-button" id="markAllAbsent" type="button">Clear</button>
+              </div>
+            </div>
+            <div id="attendanceGrid" class="attendance-grid"></div>
+          </section>
+
+          <div class="form-footer">
+            <button class="primary-button" type="submit">Save meeting and calculate</button>
+          </div>
+        </form>
+      </section>
+
+      <section id="planning" class="view">
+        <div class="planning-layout">
+          <section class="surface">
+            <div class="section-heading">
+              <h2>Weekly planning</h2>
+              <span class="small-note">Plan future meetings without awarding badge credit yet.</span>
+            </div>
+            <form id="planningForm" class="badge-form">
+              <input id="planningEditId" type="hidden" />
+              <div class="field-grid">
+                <label>
+                  Meeting date
+                  <input id="planningDate" type="date" required />
+                </label>
+                <label>
+                  Meeting title
+                  <input id="planningTitle" type="text" placeholder="Friendship night, camp prep, service project" required />
+                </label>
+              </div>
+              <label>
+                Plan notes
+                <textarea id="planningNotes" rows="4" placeholder="Activities, supplies, patrol jobs, leader notes, reminders"></textarea>
+              </label>
+              <div class="section-heading">
+                <h3>Badges to work toward</h3>
+                <div class="picker-controls">
+                  <input id="planningBadgeSearch" class="compact-input" type="search" placeholder="Search badges" />
+                  <button class="quiet-button" id="planningSelectShown" type="button">Select shown</button>
+                  <button class="quiet-button" id="planningClearShown" type="button">Clear shown</button>
+                </div>
+              </div>
+              <div id="planningBadgeChecklist" class="planning-badge-checklist"></div>
+              <div id="planningActivityPlanner" class="planning-activity-planner"></div>
+              <div class="form-footer">
+                <button class="quiet-button" id="planningReset" type="button">New plan</button>
+                <button class="primary-button" type="submit">Save weekly plan</button>
+              </div>
+            </form>
+          </section>
+
+          <section class="surface">
+            <div class="section-heading">
+              <h2>Planning calendar</h2>
+              <div class="inline-actions">
+                <button class="quiet-button" id="planningCalendarPrev" type="button">Prev</button>
+                <button class="quiet-button" id="planningCalendarToday" type="button">Today</button>
+                <button class="quiet-button" id="planningCalendarNext" type="button">Next</button>
+              </div>
+            </div>
+            <div class="calendar-heading-row">
+              <h3 id="planningCalendarMonthLabel"></h3>
+              <span class="small-note">Click a date to start a plan, or click a plan to edit or log it.</span>
+            </div>
+            <div id="planningCalendar" class="calendar-month-grid"></div>
+            <div id="planningCalendarDetail" class="calendar-detail"></div>
+          </section>
+        </div>
+      </section>
+
+      <section id="itinerary" class="view hidden-view">
+        <section class="surface itinerary-page">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Meeting itinerary</p>
+              <h2 id="itineraryTitle">Today</h2>
+            </div>
+            <button class="primary-button" id="returnFromItinerary" type="button">Return home</button>
+          </div>
+          <div id="itineraryContent" class="itinerary-content"></div>
+        </section>
+      </section>
+
+      <section id="cookies" class="view">
+        <section class="surface">
+          <div class="section-heading">
+            <div>
+              <h2>Cookie tracker</h2>
+              <span class="small-note">Track each pickup, payment, and outstanding balance by Ember.</span>
+            </div>
+            <div class="cookie-mode-actions">
+              <button class="quiet-button" id="cookieEntryMode" type="button">Entry</button>
+              <button class="quiet-button" id="cookieSummaryMode" type="button">Summary</button>
+            </div>
+          </div>
+          <div class="cookie-entry-controls">
+            <label>
+              Ember
+              <select id="cookieKidSelect"></select>
+            </label>
+          </div>
+          <div class="cookie-rates">
+            <span>Boxes are $6 each. Cases are 12 boxes, or $72.</span>
+          </div>
+          <div class="cookie-summary-grid">
+            <div>
+              <span>Owed</span>
+              <strong id="cookieTotalOwed">$0</strong>
+            </div>
+            <div>
+              <span>Paid</span>
+              <strong id="cookieTotalPaid">$0</strong>
+            </div>
+            <div>
+              <span>Outstanding</span>
+              <strong id="cookieTotalOutstanding">$0</strong>
+            </div>
+            <div class="cookie-inventory-total">
+              <span>Cookies out</span>
+              <strong><span id="cookieTotalCases">0</span> cases + <span id="cookieTotalBoxes">0</span> boxes</strong>
+            </div>
+          </div>
+          <div id="cookieRows" class="cookie-ledger"></div>
+          <div class="cookie-help small-note">
+            Use multiple pickup rows when a parent takes more cookies another week. Amounts owed update from the cases and boxes entered for each pickup.
+          </div>
+        </section>
+      </section>
+
+      <section id="chat" class="view">
+        <div class="chat-layout">
+          <section class="surface chat-panel">
+            <div class="section-heading">
+              <h2>Chat</h2>
+              <div class="inline-actions">
+                <button class="quiet-button" id="chatUseMeeting" type="button">Use meeting details</button>
+                <button class="quiet-button" id="chatClear" type="button">Clear</button>
+              </div>
+            </div>
+            <div id="chatMessages" class="chat-messages" aria-live="polite"></div>
+            <form id="chatForm" class="chat-form">
+              <textarea id="chatInput" rows="4" placeholder="Ask about an event, activity idea, badge plan, or what today could count for" required></textarea>
+              <button class="primary-button" type="submit">Send</button>
+            </form>
+          </section>
+
+          <section class="surface">
+            <div class="section-heading">
+              <h2>Badge focus</h2>
+            </div>
+            <div id="chatBadgeNeeds" class="stack-list"></div>
+          </section>
+        </div>
+      </section>
+
+      <section id="attendance" class="view">
+        <div class="attendance-view-toggle" role="group" aria-label="Attendance view">
+          <button class="tab is-active" id="attendanceRosterToggle" type="button">Embers</button>
+          <button class="tab" id="attendanceListToggle" type="button">List</button>
+          <button class="tab" id="attendanceCalendarToggle" type="button">Calendar</button>
+        </div>
+
+        <div class="attendance-panel" id="attendanceListPanel">
+          <section class="surface">
+            <div class="section-heading">
+              <h2>Missed days by Ember</h2>
+              <input id="attendanceSearch" class="compact-input" type="search" placeholder="Search Ember or date" />
+            </div>
+            <div id="kidMissedSummary" class="stack-list"></div>
+          </section>
+        </div>
+
+        <div class="attendance-panel" id="attendanceCalendarPanel">
+          <section class="surface">
+            <div class="section-heading">
+              <h2>Attendance calendar</h2>
+              <div class="inline-actions">
+                <button class="quiet-button" id="calendarPrev" type="button">Prev</button>
+                <button class="quiet-button" id="calendarToday" type="button">Today</button>
+                <button class="quiet-button" id="calendarNext" type="button">Next</button>
+              </div>
+            </div>
+            <div class="calendar-heading-row">
+              <h3 id="calendarMonthLabel"></h3>
+              <span class="small-note">Click an event to see who missed it.</span>
+            </div>
+            <div id="attendanceCalendar" class="calendar-month-grid"></div>
+            <form id="scheduleEventForm" class="schedule-form">
+              <h3>Schedule GG event</h3>
+              <div class="field-grid">
+                <label>
+                  Date
+                  <input id="scheduleEventDate" type="date" required />
+                </label>
+                <label>
+                  Event
+                  <input id="scheduleEventTitle" type="text" placeholder="Meeting, camp, ceremony" required />
+                </label>
+              </div>
+              <label>
+                Notes
+                <textarea id="scheduleEventNotes" rows="3" placeholder="Optional planning notes"></textarea>
+              </label>
+              <button class="primary-button" type="submit">Schedule event</button>
+            </form>
+            <div id="calendarEventDetail" class="calendar-detail"></div>
+          </section>
+        </div>
+
+        <div class="attendance-panel is-active" id="attendanceRosterPanel">
+          <section class="surface">
+            <div class="section-heading">
+              <h2>Embers in the group</h2>
+              <label class="switch-row">
+                <input id="rosterChecked" type="checkbox" />
+                <span>Roster checked</span>
+              </label>
+            </div>
+            <form id="kidForm" class="inline-form">
+              <label>
+                Name
+                <input id="kidName" type="text" placeholder="First name" required />
+              </label>
+              <label>
+                Patrol
+                <select id="kidPatrol">
+                  <option value="">Choose patrol</option>
+                  <option value="Lares">Lares</option>
+                  <option value="Elves">Elves</option>
+                  <option value="Sprites">Sprites</option>
+                  <option value="Fairies">Fairies</option>
+                </select>
+              </label>
+              <label>
+                Year
+                <select id="kidYear">
+                  <option value="">Choose year</option>
+                  <option value="1">1st year</option>
+                  <option value="2">2nd year</option>
+                </select>
+              </label>
+              <button class="primary-button" type="submit">Add Ember</button>
+              <button class="quiet-button" id="loadExcelKidsInline" type="button">Load Excel Embers</button>
+            </form>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Year</th>
+                    <th>Patrol</th>
+                    <th>Attendance</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="kidTable"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section id="badges" class="view">
+        <div class="badge-layout">
+          <section class="surface">
+            <div class="section-heading">
+              <h2 id="badgeFormTitle">Create a Badge</h2>
+              <button class="text-button" id="resetBadgeForm" type="button">New badge</button>
+            </div>
+            <form id="badgeForm" class="badge-form">
+              <input id="badgeEditId" type="hidden" />
+              <label>
+                Badge name
+                <input id="badgeName" type="text" placeholder="Custom challenge, service badge, unit badge" required />
+              </label>
+              <label>
+                Program area
+                <input id="badgeArea" type="text" placeholder="Custom Badges" />
+              </label>
+              <label>
+                Criteria needed to earn
+                <input id="badgeRequired" type="number" min="1" step="1" value="1" required />
+              </label>
+              <label>
+                Badge criteria
+                <textarea id="badgeRequirements" rows="9" placeholder="One criterion per line" required></textarea>
+              </label>
+              <button class="primary-button" type="submit">Save badge</button>
+            </form>
+          </section>
+
+          <section class="surface">
+            <div class="section-heading">
+              <h2>Badge library</h2>
+              <input id="badgeSearch" class="compact-input" type="search" placeholder="Search badges" />
+            </div>
+            <div id="badgeList" class="badge-list"></div>
+          </section>
+        </div>
+      </section>
+
+      <section id="kid-badges" class="view">
+        <section class="surface">
+          <div class="section-heading">
+            <h2>Badges by Ember</h2>
+            <div class="inline-actions">
+              <div class="view-toggle badge-view-toggle" role="group" aria-label="Badge table view">
+                <button class="tab is-active" id="kidBadgeProgressToggle" type="button">Progress</button>
+                <button class="tab" id="kidBadgeSummaryToggle" type="button">Summary</button>
+                <button class="tab" id="kidBadgeHandoutToggle" type="button">Handed out</button>
+              </div>
+              <select id="kidBadgeFilter" class="compact-input" aria-label="Choose Ember"></select>
+            </div>
+          </div>
+          <div id="kidBadgeCards" class="kid-badge-grid"></div>
+        </section>
+      </section>
+
+      <section id="patrol-points" class="view">
+        <section class="surface">
+          <div class="section-heading">
+            <h2>Patrol Points</h2>
+            <span class="small-note">Edit Ember points by meeting; patrol totals update automatically.</span>
+          </div>
+          <div id="patrolPointsSheet" class="kid-badge-grid"></div>
+        </section>
+      </section>
+
+      <section id="history" class="view">
+        <section class="surface">
+          <div class="section-heading">
+            <h2>Meeting history</h2>
+            <span class="small-note">Deleting a meeting removes its badge credits.</span>
+          </div>
+          <div id="meetingHistory" class="history-list"></div>
+        </section>
+      </section>
+
+      <section id="data" class="view">
+        <section class="surface">
+          <div class="section-heading">
+            <h2>Data tools</h2>
+            <span class="small-note">Everything is stored in this browser until exported.</span>
+          </div>
+          <div class="data-actions">
+            <button class="quiet-button" id="loadExcelKids" type="button">Load Excel Embers</button>
+            <button class="quiet-button" id="loadExcelAttendance" type="button">Load Excel attendance</button>
+            <button class="quiet-button" id="loadExcelProgress" type="button">Load Excel progress</button>
+            <button class="quiet-button" id="seedDemo" type="button">Load demo setup</button>
+            <button class="quiet-button" id="exportJson" type="button">Export JSON backup</button>
+            <button class="quiet-button" data-share-tracker type="button">Share tracker</button>
+            <button class="quiet-button" id="exportCsv" type="button">Export progress CSV</button>
+            <label class="file-button">
+              Import JSON
+              <input id="importJson" type="file" accept="application/json" />
+            </label>
+            <button class="danger-button" id="clearData" type="button">Clear all data</button>
+          </div>
+        </section>
+
+        <section class="surface">
+          <div class="section-heading">
+            <div>
+              <h2>Google Drive tracker files</h2>
+              <span class="small-note">Choose a unit file, or create a new tracker JSON inside the Embers Tracker Files folder.</span>
+            </div>
+            <span class="status-pill" id="driveSyncState">Not connected</span>
+          </div>
+          <div class="drive-sync-grid">
+            <label>
+              OAuth Client ID
+              <input id="driveClientId" type="text" />
+            </label>
+            <label>
+              Current tracker file
+              <select id="driveFileSelect"></select>
+            </label>
+            <label>
+              New tracker name
+              <input id="driveNewFileName" type="text" placeholder="Tuesday Embers" />
+            </label>
+            <input id="driveFileId" type="hidden" />
+          </div>
+          <div class="drive-sync-options">
+            <label class="check-row">
+              <input id="driveAutoPush" type="checkbox" />
+              Auto-push changes to the selected tracker
+            </label>
+            <label class="check-row hidden">
+              <input id="driveAutoPull" type="checkbox" checked />
+              Pull latest on sign-in
+            </label>
+          </div>
+          <div class="data-actions">
+            <button class="quiet-button" id="driveRefreshFiles" type="button">Refresh tracker files</button>
+            <button class="quiet-button" id="driveCreateNamedFile" type="button">Create named tracker</button>
+            <button class="quiet-button" id="drivePullFile" type="button">Pull selected</button>
+            <button class="quiet-button" id="drivePushFile" type="button">Push current data</button>
+          </div>
+          <p class="muted" id="driveSyncStatus">Sign in with Google to load the latest shared tracker.</p>
+        </section>
+      </section>
+    </main>
+
+    <div id="eventModal" class="modal-backdrop" hidden>
+      <form id="eventEditForm" class="event-modal" role="dialog" aria-modal="true" aria-labelledby="eventModalTitle">
+        <header>
+          <div>
+            <p class="eyebrow" id="eventModalSource">Calendar event</p>
+            <h2 id="eventModalTitle">Edit event</h2>
+          </div>
+          <button class="text-button" id="closeEventModal" type="button">Close</button>
+        </header>
+        <input id="eventEditId" type="hidden" />
+        <div class="field-grid">
+          <label>
+            Date
+            <input id="eventEditDate" type="date" required />
+          </label>
+          <label>
+            Event
+            <input id="eventEditTitle" type="text" required />
+          </label>
+        </div>
+        <label>
+          Notes
+          <textarea id="eventEditNotes" rows="3"></textarea>
+        </label>
+        <section>
+          <div class="section-heading">
+            <h3>Badges credited at this event</h3>
+            <input id="eventBadgeSearch" class="compact-input" type="search" placeholder="Search badges" />
+          </div>
+          <div id="eventBadgeChecklist" class="modal-check-grid"></div>
+        </section>
+        <section>
+          <div class="section-heading">
+            <h3>Who was absent?</h3>
+            <div class="inline-actions">
+              <button class="quiet-button" id="eventAllPresent" type="button">All present</button>
+              <button class="quiet-button" id="eventAllAbsent" type="button">All absent</button>
+            </div>
+          </div>
+          <div id="eventAbsentChecklist" class="modal-check-grid"></div>
+        </section>
+        <footer>
+          <button class="danger-button" id="deleteEventFromModal" type="button">Delete event</button>
+          <button class="primary-button" type="submit">Save event</button>
+        </footer>
+      </form>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="./excel-attendance-data.js"></script>
+    <script src="./excel-progress-data.js"></script>
+    <script src="./badge-knowledge.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>

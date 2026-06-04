@@ -1,0 +1,47 @@
+{
+  "name": "embers-tracker",
+  "version": "1.0.0",
+  "description": "Desktop launcher for Embers Tracker",
+  "main": "desktop-main.js",
+  "private": true,
+  "author": "Embers Tracker",
+  "scripts": {
+    "start": "electron .",
+    "pack:win": "electron-builder --win nsis",
+    "pack:mac": "electron-builder --mac dmg",
+    "pack:all": "electron-builder --win nsis --mac dmg"
+  },
+  "build": {
+    "appId": "ca.embersonline.tracker",
+    "productName": "Embers Tracker",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "**/*",
+      "!dist/**",
+      "!node_modules/.cache/**"
+    ],
+    "win": {
+      "target": "nsis",
+      "artifactName": "Embers-Tracker-Setup-${version}.${ext}",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.productivity",
+      "artifactName": "Embers-Tracker-${version}.${ext}"
+    }
+  },
+  "devDependencies": {
+    "electron": "^31.7.7",
+    "electron-builder": "^24.13.3"
+  }
+}
