@@ -36,6 +36,9 @@
     },
     "mac": {
       "target": "dmg",
+      "identity": null,
+      "gatekeeperAssess": false,
+      "hardenedRuntime": false,
       "category": "public.app-category.productivity",
       "artifactName": "Embers-Tracker-${version}.${ext}"
     }
