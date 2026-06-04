@@ -823,7 +823,8 @@ async function findDriveSyncFiles() {
   const folderQuery = `'${driveQueryEscape(folder.id)}' in parents and mimeType = 'application/json' and trashed = false`;
   const legacyName = driveQueryEscape(DRIVE_SYNC_FILE_NAME);
   const legacyQuery = `name = '${legacyName}' and mimeType = 'application/json' and trashed = false`;
-  const queries = [folderQuery, legacyQuery];
+  const sharedQuery = `sharedWithMe = true and mimeType = 'application/json' and trashed = false`;
+  const queries = [folderQuery, sharedQuery, legacyQuery];
   const seen = new Set();
   const files = [];
   for (const q of queries) {
