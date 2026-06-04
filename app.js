@@ -1,7 +1,7 @@
 const STORE_KEY = "ember-badge-studio-v1";
 const DRIVE_SYNC_FILE_NAME = "Embers Tracker Sync.json";
 const DRIVE_SYNC_FOLDER_NAME = "Embers Tracker Files";
-const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
+const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive";
 const DEFAULT_GOOGLE_CLIENT_ID = "428700740931-sos1bugq8r2f4eaqli22tkeind062sm3.apps.googleusercontent.com";
 
 let driveTokenClient = null;
