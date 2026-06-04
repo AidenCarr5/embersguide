@@ -665,6 +665,7 @@ function unitTrackerDisplayName() {
   if (!sync.fileId || !fileName) return "Embers Tracker";
   const baseName = fileName
     .replace(/\.json$/i, "")
+    .replace(/\bsync\b$/i, "")
     .replace(/[-_]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
