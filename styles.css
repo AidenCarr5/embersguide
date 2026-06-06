@@ -1740,6 +1740,12 @@ textarea {
   color: #7c351c;
 }
 
+.year-group-3 th {
+  background: linear-gradient(90deg, #efe6fb, #fbf8ff);
+  border-color: rgba(115, 73, 160, 0.28);
+  color: #4f3274;
+}
+
 .year-group-unset th {
   background: linear-gradient(90deg, #eef3f5, #fbfdfe);
   color: var(--muted);
@@ -1754,6 +1760,12 @@ textarea {
   border-color: color-mix(in srgb, var(--ember-orange) 58%, white);
   background: #fff4ed;
   color: #7c351c;
+}
+
+.year-select-3 {
+  border-color: #b79ad8;
+  background: #f7f0ff;
+  color: #4f3274;
 }
 
 .year-select-unset {
