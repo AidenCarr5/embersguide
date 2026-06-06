@@ -32,7 +32,7 @@
       <button class="tab" data-tab-target="log" type="button">Log meeting</button>
       <button class="tab" data-tab-target="kid-badges" type="button">Ember Badges</button>
       <button class="tab" data-tab-target="patrol-points" type="button">Patrol Points</button>
-      <button class="tab" data-tab-target="attendance" type="button">Attendance</button>
+      <button class="tab" data-tab-target="attendance" type="button">Roster</button>
       <button class="tab" data-tab-target="cookies" type="button">Cookies Tracker</button>
       <button class="tab" data-tab-target="badges" type="button">Create a Badge</button>
       <button class="tab" data-tab-target="chat" type="button">Chat</button>
@@ -109,7 +109,7 @@
 
           <section class="surface">
             <div class="section-heading">
-              <h2>Attendance</h2>
+              <h2>Roster</h2>
               <div class="inline-actions">
                 <button class="quiet-button" id="markAllPresent" type="button">All present</button>
                 <button class="quiet-button" id="markAllAbsent" type="button">Clear</button>
@@ -269,8 +269,8 @@
       </section>
 
       <section id="attendance" class="view">
-        <div class="attendance-view-toggle" role="group" aria-label="Attendance view">
-          <button class="tab is-active" id="attendanceRosterToggle" type="button">Embers</button>
+        <div class="attendance-view-toggle" role="group" aria-label="Roster view">
+          <button class="tab is-active" id="attendanceRosterToggle" type="button">Roster</button>
           <button class="tab" id="attendanceListToggle" type="button">List</button>
           <button class="tab" id="attendanceCalendarToggle" type="button">Calendar</button>
         </div>
@@ -288,7 +288,7 @@
         <div class="attendance-panel" id="attendanceCalendarPanel">
           <section class="surface">
             <div class="section-heading">
-              <h2>Attendance calendar</h2>
+              <h2>Roster calendar</h2>
               <div class="inline-actions">
                 <button class="quiet-button" id="calendarPrev" type="button">Prev</button>
                 <button class="quiet-button" id="calendarToday" type="button">Today</button>
@@ -325,7 +325,7 @@
         <div class="attendance-panel is-active" id="attendanceRosterPanel">
           <section class="surface">
             <div class="section-heading">
-              <h2>Embers in the group</h2>
+              <h2>Roster</h2>
               <label class="switch-row">
                 <input id="rosterChecked" type="checkbox" />
                 <span>Roster checked</span>
@@ -340,18 +340,42 @@
                 Patrol
                 <select id="kidPatrol">
                   <option value="">Choose patrol</option>
-                  <option value="Lares">Lares</option>
-                  <option value="Elves">Elves</option>
-                  <option value="Sprites">Sprites</option>
-                  <option value="Fairies">Fairies</option>
                 </select>
               </label>
               <label>
-                Year
+                Ember year
                 <select id="kidYear">
                   <option value="">Choose year</option>
                   <option value="1">1st year</option>
                   <option value="2">2nd year</option>
+                  <option value="3">3rd year</option>
+                </select>
+              </label>
+              <label>
+                Leadership
+                <select id="kidLeadership">
+                  <option value="none">N/A</option>
+                  <option value="patrolLeader">Patrol leader</option>
+                  <option value="patrolSecond">Patrol second</option>
+                </select>
+              </label>
+              <label>
+                Membership
+                <select id="kidMembershipYear">
+                  <option value="">Choose membership year</option>
+                  <option value="1">1st year</option>
+                  <option value="2">2nd year</option>
+                  <option value="3">3rd year</option>
+                  <option value="4">4th year</option>
+                </select>
+              </label>
+              <label>
+                Returning
+                <select id="kidReturningStatus">
+                  <option value="">Choose status</option>
+                  <option value="returning">Returning</option>
+                  <option value="newSecondYear">New 2nd year</option>
+                  <option value="firstYear">1st year</option>
                 </select>
               </label>
               <button class="primary-button" type="submit">Add Ember</button>
@@ -362,9 +386,11 @@
                 <thead>
                   <tr>
                     <th>Name</th>
-                    <th>Year</th>
+                    <th>Ember year</th>
                     <th>Patrol</th>
-                    <th>Attendance</th>
+                    <th>Leadership</th>
+                    <th>Membership</th>
+                    <th>Returning</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -459,7 +485,7 @@
           </div>
           <div class="data-actions">
             <button class="quiet-button" id="loadExcelKids" type="button">Load Excel Embers</button>
-            <button class="quiet-button" id="loadExcelAttendance" type="button">Load Excel attendance</button>
+            <button class="quiet-button" id="loadExcelAttendance" type="button">Load Excel attendance history</button>
             <button class="quiet-button" id="loadExcelProgress" type="button">Load Excel progress</button>
             <button class="quiet-button" id="seedDemo" type="button">Load demo setup</button>
             <button class="quiet-button" id="exportJson" type="button">Export JSON backup</button>
@@ -583,9 +609,9 @@
     </div>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script src="./excel-attendance-data.js?v=20260604-switcher"></script>
-    <script src="./excel-progress-data.js?v=20260604-switcher"></script>
-    <script src="./badge-knowledge.js?v=20260604-switcher"></script>
-    <script src="./app.js?v=20260604-switcher"></script>
+    <script src="./excel-attendance-data.js?v=20260605-roster-cookies"></script>
+    <script src="./excel-progress-data.js?v=20260605-roster-cookies"></script>
+    <script src="./badge-knowledge.js?v=20260605-roster-cookies"></script>
+    <script src="./app.js?v=20260605-roster-cookies"></script>
   </body>
 </html>

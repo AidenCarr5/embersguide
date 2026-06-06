@@ -765,7 +765,7 @@ body.login-mode main {
 }
 
 .inline-form {
-  grid-template-columns: minmax(180px, 1fr) minmax(150px, 0.7fr) minmax(130px, 0.5fr) auto auto;
+  grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
   align-items: end;
   margin-bottom: 18px;
 }
@@ -1431,6 +1431,25 @@ textarea {
   color: #0f6b3e;
 }
 
+.handout-check.is-pending {
+  grid-template-columns: 18px auto;
+  color: var(--ember-orange);
+}
+
+.handout-confirm-row {
+  grid-column: 1 / -1;
+  display: inline-flex;
+  justify-content: center;
+  gap: 6px;
+}
+
+.handout-confirm-row .primary-button,
+.handout-confirm-row .text-button {
+  min-height: 30px;
+  padding: 6px 9px;
+  font-size: 0.72rem;
+}
+
 .badge-matrix.is-handout td.is-earned {
   background: #f3fbf5;
 }
@@ -1943,6 +1962,11 @@ textarea {
   grid-template-columns: minmax(135px, 0.8fr) minmax(170px, 1fr) minmax(82px, 0.45fr) minmax(82px, 0.45fr) minmax(110px, 0.55fr) minmax(180px, 1.2fr) auto;
 }
 
+.cookie-payment-header,
+.cookie-payment-row {
+  grid-template-columns: minmax(135px, 0.8fr) minmax(110px, 0.6fr) minmax(150px, 0.8fr) minmax(220px, 1.5fr) auto;
+}
+
 .cookie-pickup-header {
   min-height: 30px;
   padding: 0 10px;
@@ -1967,7 +1991,7 @@ textarea {
 }
 
 .cookie-payment-panel {
-  grid-template-columns: minmax(110px, 0.75fr) minmax(150px, 1fr) minmax(120px, 0.85fr) minmax(135px, 0.9fr) minmax(135px, 0.9fr) minmax(220px, 1.5fr);
+  grid-template-columns: repeat(3, minmax(120px, 1fr));
   padding: 10px;
   border: 1px solid #d4e5ed;
   border-radius: var(--radius);

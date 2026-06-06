@@ -174,6 +174,9 @@ function excelRosterKids() {
     name,
     patrol,
     year: "",
+    membershipYear: "",
+    leadership: "none",
+    returningStatus: "",
   }));
 }
 
@@ -439,6 +442,7 @@ function buildDemoData() {
 const EMBER_YEAR_LABELS = {
   "1": "1st year",
   "2": "2nd year",
+  "3": "3rd year",
 };
 
 function emberYearValue(value) {
@@ -448,6 +452,40 @@ function emberYearValue(value) {
 
 function emberYearLabel(value) {
   return EMBER_YEAR_LABELS[emberYearValue(value)] || "No year set";
+}
+
+const MEMBERSHIP_YEAR_LABELS = {
+  "1": "1st year",
+  "2": "2nd year",
+  "3": "3rd year",
+  "4": "4th year",
+};
+
+const LEADERSHIP_LABELS = {
+  none: "N/A",
+  patrolLeader: "Patrol leader",
+  patrolSecond: "Patrol second",
+};
+
+const RETURNING_LABELS = {
+  returning: "Returning",
+  newSecondYear: "New 2nd year",
+  firstYear: "1st year",
+};
+
+function membershipYearValue(value) {
+  const year = String(value || "").trim();
+  return MEMBERSHIP_YEAR_LABELS[year] ? year : "";
+}
+
+function leadershipValue(value) {
+  const key = String(value || "none").trim();
+  return LEADERSHIP_LABELS[key] ? key : "none";
+}
+
+function returningValue(value) {
+  const key = String(value || "").trim();
+  return RETURNING_LABELS[key] ? key : "";
 }
 
 let state = loadState();
@@ -495,7 +533,13 @@ function loadState() {
 function normalizeState(value) {
   const fallback = buildEmptyData();
   const normalized = {
-    kids: Array.isArray(value.kids) ? value.kids.map((kid) => ({ ...kid, year: emberYearValue(kid.year) })) : fallback.kids,
+    kids: Array.isArray(value.kids) ? value.kids.map((kid) => ({
+      ...kid,
+      year: emberYearValue(kid.year),
+      membershipYear: membershipYearValue(kid.membershipYear),
+      leadership: leadershipValue(kid.leadership),
+      returningStatus: returningValue(kid.returningStatus),
+    })) : fallback.kids,
     badges: fallback.badges,
     meetings: Array.isArray(value.meetings) ? value.meetings : [],
     baselineCredits: Array.isArray(value.baselineCredits) ? value.baselineCredits : [],
@@ -1178,9 +1222,26 @@ function sortedKids() {
   return [...state.kids].sort(compareKidsByYear);
 }
 
+function compareKidsForBadges(a, b) {
+  const returnOrder = { returning: 0, newSecondYear: 1, firstYear: 2, "": 3 };
+  const aReturn = returnOrder[returningValue(a.returningStatus)] ?? 3;
+  const bReturn = returnOrder[returningValue(b.returningStatus)] ?? 3;
+  if (aReturn !== bReturn) return aReturn - bReturn;
+  return compareKidsByYear(a, b);
+}
+
 function patrolOptions(current = "") {
-  return [...new Set(["Lares", "Elves", "Sprites", "Fairies", ...state.kids.map((kid) => kid.patrol).filter(Boolean), current].filter(Boolean))]
+  return [...new Set(["Dryads", "Lares", "Elves", "Leprechauns", "Fairies", "Nymphs", "Gnomes", "Pixies", "Kelpies", "Sprites", ...state.kids.map((kid) => kid.patrol).filter(Boolean), current].filter(Boolean))]
     .sort((a, b) => a.localeCompare(b));
+}
+
+function renderRosterFormOptions() {
+  const patrolSelect = $("#kidPatrol");
+  if (patrolSelect) {
+    const current = patrolSelect.value;
+    patrolSelect.innerHTML = `<option value="">Choose patrol</option>${patrolOptions(current).map((patrol) => `<option value="${escapeAttr(patrol)}">${escapeHtml(patrol)}</option>`).join("")}`;
+    patrolSelect.value = patrolOptions(current).includes(current) ? current : "";
+  }
 }
 
 function setDefaultMeetingDate() {
@@ -1719,6 +1780,7 @@ function renderAttendanceGrid() {
 }
 
 function renderKids() {
+  renderRosterFormOptions();
   $("#rosterChecked").checked = Boolean(state.settings.rosterChecked);
   const rows = [];
   let activeYear = null;
@@ -1735,7 +1797,7 @@ function renderKids() {
       activeYear = year;
       rows.push(`
         <tr class="year-group-row year-group-${escapeAttr(year || "unset")}">
-          <th colspan="5">
+          <th colspan="7">
             <div class="year-group-content">
               <span>${escapeHtml(yearLabel)}</span>
               <small>${yearCounts[year]} ${yearCounts[year] === 1 ? "Ember" : "Embers"}</small>
@@ -1759,12 +1821,28 @@ function renderKids() {
             ${patrolOptions(kid.patrol).map((patrol) => `<option value="${escapeAttr(patrol)}" ${kid.patrol === patrol ? "selected" : ""}>${escapeHtml(patrol)}</option>`).join("")}
           </select>
         </td>
-        <td>${attendanceRate(kid.id)}</td>
+        <td>
+          <select class="table-select" data-kid-leadership="${escapeAttr(kid.id)}" aria-label="Leadership for ${escapeAttr(kid.name)}">
+            ${Object.entries(LEADERSHIP_LABELS).map(([value, label]) => `<option value="${escapeAttr(value)}" ${leadershipValue(kid.leadership) === value ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}
+          </select>
+        </td>
+        <td>
+          <select class="table-select" data-kid-membership="${escapeAttr(kid.id)}" aria-label="Membership year for ${escapeAttr(kid.name)}">
+            <option value="" ${membershipYearValue(kid.membershipYear) ? "" : "selected"}>No membership year</option>
+            ${Object.entries(MEMBERSHIP_YEAR_LABELS).map(([value, label]) => `<option value="${escapeAttr(value)}" ${membershipYearValue(kid.membershipYear) === value ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}
+          </select>
+        </td>
+        <td>
+          <select class="table-select" data-kid-returning="${escapeAttr(kid.id)}" aria-label="Returning status for ${escapeAttr(kid.name)}">
+            <option value="" ${returningValue(kid.returningStatus) ? "" : "selected"}>No status set</option>
+            ${Object.entries(RETURNING_LABELS).map(([value, label]) => `<option value="${escapeAttr(value)}" ${returningValue(kid.returningStatus) === value ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}
+          </select>
+        </td>
         <td><button class="text-button" data-remove-kid="${escapeAttr(kid.id)}" type="button">Remove</button></td>
       </tr>
     `);
   });
-  $("#kidTable").innerHTML = rows.join("") || `<tr><td colspan="5">No Embers added yet.</td></tr>`;
+  $("#kidTable").innerHTML = rows.join("") || `<tr><td colspan="7">No Embers added yet.</td></tr>`;
 }
 
 function renderAttendanceCalendar() {
@@ -2407,11 +2485,6 @@ function openEventItinerary(eventId) {
 const COOKIE_BOX_PRICE = 6;
 const COOKIE_CASE_PRICE = 72;
 const COOKIE_FLAVORS = ["Mint", "Chocolate/Vanilla"];
-const COOKIE_PAYMENT_STATUSES = [
-  ["unpaid", "Not paid yet"],
-  ["partial", "Partial payment"],
-  ["full", "Paid in full"],
-];
 const COOKIE_PAYMENT_METHODS = ["", "Card", "Cash", "Other"];
 
 function cookieRows() {
@@ -2431,6 +2504,16 @@ function newCookiePickup() {
   };
 }
 
+function newCookiePayment() {
+  return {
+    id: uid("cookie-payment"),
+    date: today(),
+    amount: 0,
+    method: "",
+    notes: "",
+  };
+}
+
 function normalizeCookieRow(row = {}) {
   const pickups = Array.isArray(row.pickups) ? row.pickups : [];
   const legacyCases = cookieNumber(row.cases);
@@ -2444,23 +2527,39 @@ function normalizeCookieRow(row = {}) {
     notes: row.notes || "",
   }] : [];
 
+  const normalizedPickups = [...pickups, ...legacyPickup].map((pickup) => ({
+    id: pickup.id || uid("cookie"),
+    date: pickup.date || "",
+    flavor: COOKIE_FLAVORS.includes(pickup.flavor) ? pickup.flavor : "Mint",
+    cases: cookieNumber(pickup.cases),
+    boxes: cookieNumber(pickup.boxes),
+    notes: pickup.notes || "",
+  }));
+  const legacyPayment = row.payment || {};
+  const owed = normalizedPickups.reduce((sum, pickup) => sum + cookiePickupOwed(pickup), 0);
+  const legacyPaymentAmount = legacyPayment.status === "full" ? owed : cookieNumber(legacyPayment.amountPaid ?? row.paymentCollected);
+  const payments = Array.isArray(row.payments) ? row.payments : [];
+  const normalizedPayments = payments.map((payment) => ({
+    id: payment.id || uid("cookie-payment"),
+    date: payment.date || "",
+    amount: cookieNumber(payment.amount),
+    method: COOKIE_PAYMENT_METHODS.includes(payment.method) ? payment.method : "",
+    notes: payment.notes || "",
+  }));
+  if (!payments.length && legacyPaymentAmount) {
+    normalizedPayments.push({
+      id: uid("cookie-payment"),
+      date: legacyPayment.date || row.paymentDate || "",
+      amount: legacyPaymentAmount,
+      method: COOKIE_PAYMENT_METHODS.includes(legacyPayment.method || row.paymentMethod) ? (legacyPayment.method || row.paymentMethod) : "",
+      notes: legacyPayment.notes || row.paymentNotes || "",
+    });
+  }
+
   return {
     expanded: row.expanded ?? false,
-    pickups: [...pickups, ...legacyPickup].map((pickup) => ({
-      id: pickup.id || uid("cookie"),
-      date: pickup.date || "",
-      flavor: COOKIE_FLAVORS.includes(pickup.flavor) ? pickup.flavor : "Mint",
-      cases: cookieNumber(pickup.cases),
-      boxes: cookieNumber(pickup.boxes),
-      notes: pickup.notes || "",
-    })),
-    payment: {
-      status: row.payment?.status || (row.paid ? "full" : row.paymentStatus || "unpaid"),
-      amountPaid: row.payment?.amountPaid ?? row.paymentCollected ?? "",
-      method: row.payment?.method || row.paymentMethod || "",
-      date: row.payment?.date || row.paymentDate || "",
-      notes: row.payment?.notes || row.paymentNotes || "",
-    },
+    pickups: normalizedPickups,
+    payments: normalizedPayments,
   };
 }
 
@@ -2489,8 +2588,8 @@ function cookieRowSummary(row) {
   const owed = pickups.reduce((sum, pickup) => sum + cookiePickupOwed(pickup), 0);
   const cases = pickups.reduce((sum, pickup) => sum + cookieNumber(pickup.cases), 0);
   const boxes = pickups.reduce((sum, pickup) => sum + cookieNumber(pickup.boxes), 0);
-  const payment = row.payment || {};
-  const paid = payment.status === "full" ? owed : payment.status === "partial" ? cookieNumber(payment.amountPaid) : 0;
+  const payments = Array.isArray(row.payments) ? row.payments : [];
+  const paid = payments.reduce((sum, payment) => sum + cookieNumber(payment.amount), 0);
   return {
     owed,
     paid,
@@ -2499,6 +2598,7 @@ function cookieRowSummary(row) {
     boxes,
     totalBoxes: cases * 12 + boxes,
     pickupCount: pickups.length,
+    paymentCount: payments.length,
     paidInFull: owed > 0 && Math.max(owed - paid, 0) <= 0,
   };
 }
@@ -2538,8 +2638,10 @@ function renderCookieTotals() {
   $("#cookieTotalBoxes").textContent = String(totals.boxes);
 }
 
-function cookiePaymentStatusLabel(status) {
-  return COOKIE_PAYMENT_STATUSES.find(([value]) => value === status)?.[1] || "Not paid yet";
+function cookieSummaryStatus(summary) {
+  if (summary.paidInFull) return "Paid";
+  if (summary.paid > 0) return "Partial payment";
+  return "Not paid yet";
 }
 
 function updateCookieComputedDisplay(kidId) {
@@ -2560,7 +2662,8 @@ function updateCookieComputedDisplay(kidId) {
     cases: String(summary.cases),
     boxes: String(summary.boxes),
     pickupCount: String(summary.pickupCount),
-    status: summary.paidInFull ? "Paid" : cookiePaymentStatusLabel(row.payment?.status),
+    paymentCount: String(summary.paymentCount),
+    status: cookieSummaryStatus(summary),
   };
   Object.entries(values).forEach(([key, value]) => {
     rowElement.querySelectorAll(`[data-cookie-computed="${key}"]`).forEach((item) => {
@@ -2571,8 +2674,6 @@ function updateCookieComputedDisplay(kidId) {
     const total = rowElement.querySelector(`[data-cookie-pickup-total="${CSS.escape(pickup.id)}"]`);
     if (total) total.textContent = cookieMoney(cookiePickupOwed(pickup));
   });
-  const amountInput = rowElement.querySelector("[data-cookie-payment-field='amountPaid']");
-  if (amountInput && row.payment?.status === "full") amountInput.value = String(summary.owed);
   renderCookieTotals();
 }
 
@@ -2599,7 +2700,6 @@ function renderCookieTracker() {
 function renderCookieEntryRow(kid) {
     const row = cookieRowForKid(kid.id);
     const summary = cookieRowSummary(row);
-    const payment = row.payment || {};
     return `
       <article class="cookie-ember-row cookie-entry-row ${summary.paidInFull ? "is-paid" : ""}" data-cookie-row="${escapeAttr(kid.id)}">
         <div class="cookie-ember-summary" data-cookie-entry-summary>
@@ -2609,7 +2709,7 @@ function renderCookieEntryRow(kid) {
           </span>
           <span class="cookie-compact-total" data-cookie-computed="totalBoxes">${summary.totalBoxes} boxes</span>
           <span class="cookie-amount-due">Outstanding <strong data-cookie-computed="outstanding">${cookieMoney(summary.outstanding)}</strong></span>
-          <span class="cookie-status" data-cookie-computed="status">${summary.paidInFull ? "Paid" : cookiePaymentStatusLabel(payment.status)}</span>
+          <span class="cookie-status" data-cookie-computed="status">${cookieSummaryStatus(summary)}</span>
         </div>
         <div class="cookie-ember-details">
           <div class="cookie-detail-heading">
@@ -2638,35 +2738,32 @@ function renderCookieEntryRow(kid) {
               <button class="text-button" data-cookie-remove-pickup="${escapeAttr(pickup.id)}" data-cookie-kid-id="${escapeAttr(kid.id)}" type="button">Remove</button>
             </div>
           `).join("") || `<div class="empty-box">No cookie pickups yet.</div>`}
-          <div class="cookie-payment-panel">
-            <div>
-              <span class="small-note">Amount owed</span>
-              <strong data-cookie-computed="owed">${cookieMoney(summary.owed)}</strong>
-            </div>
-            <label>
-              Payment
-              <select data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-payment-field="status">
-                ${COOKIE_PAYMENT_STATUSES.map(([value, label]) => `<option value="${escapeAttr(value)}" ${payment.status === value ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}
-              </select>
-            </label>
-            <label>
-              Amount paid
-              <input data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-payment-field="amountPaid" type="number" min="0" step="1" value="${escapeAttr(payment.status === "full" ? summary.owed : payment.amountPaid || "")}" ${payment.status === "full" ? "readonly" : ""} />
-            </label>
-            <label>
-              Method
-              <select data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-payment-field="method">
+          <div class="cookie-detail-heading">
+            <h3>Payments</h3>
+            <button class="quiet-button" data-cookie-add-payment="${escapeAttr(kid.id)}" type="button">Add payment</button>
+          </div>
+          <div class="cookie-pickup-header cookie-payment-header">
+            <span>Payment date</span>
+            <span>Amount</span>
+            <span>Method</span>
+            <span>Notes</span>
+            <span></span>
+          </div>
+          ${(row.payments || []).map((payment) => `
+            <div class="cookie-pickup-row cookie-payment-row">
+              <input data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-payment-id="${escapeAttr(payment.id)}" data-cookie-payment-field="date" type="date" value="${escapeAttr(payment.date || "")}" />
+              <input data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-payment-id="${escapeAttr(payment.id)}" data-cookie-payment-field="amount" type="number" min="0" step="1" value="${escapeAttr(payment.amount || "")}" />
+              <select data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-payment-id="${escapeAttr(payment.id)}" data-cookie-payment-field="method">
                 ${COOKIE_PAYMENT_METHODS.map((method) => `<option value="${escapeAttr(method)}" ${payment.method === method ? "selected" : ""}>${escapeHtml(method || "Choose method")}</option>`).join("")}
               </select>
-            </label>
-            <label>
-              Payment date
-              <input data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-payment-field="date" type="date" value="${escapeAttr(payment.date || "")}" />
-            </label>
-            <label class="cookie-payment-notes">
-              Notes
-              <textarea data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-payment-field="notes" rows="2" placeholder="Partial payment details, parent notes, exceptions">${escapeHtml(payment.notes || "")}</textarea>
-            </label>
+              <input data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-payment-id="${escapeAttr(payment.id)}" data-cookie-payment-field="notes" type="text" placeholder="Optional note" value="${escapeAttr(payment.notes || "")}" />
+              <button class="text-button" data-cookie-remove-payment="${escapeAttr(payment.id)}" data-cookie-kid-id="${escapeAttr(kid.id)}" type="button">Remove</button>
+            </div>
+          `).join("") || `<div class="empty-box">No payments recorded yet.</div>`}
+          <div class="cookie-payment-panel">
+            <div><span class="small-note">Amount owed</span><strong data-cookie-computed="owed">${cookieMoney(summary.owed)}</strong></div>
+            <div><span class="small-note">Paid</span><strong data-cookie-computed="paid">${cookieMoney(summary.paid)}</strong></div>
+            <div><span class="small-note">Outstanding</span><strong data-cookie-computed="outstanding">${cookieMoney(summary.outstanding)}</strong></div>
           </div>
         </div>
       </article>
@@ -2686,10 +2783,8 @@ function renderCookieSummaryView() {
             <th>Boxes</th>
             <th>Cookies out</th>
             <th>Owed</th>
-            <th>Payment</th>
+            <th>Payments</th>
             <th>Paid</th>
-            <th>Method</th>
-            <th>Payment date</th>
             <th>Outstanding</th>
             <th>Notes</th>
             <th>Open</th>
@@ -2699,7 +2794,7 @@ function renderCookieSummaryView() {
           ${state.kids.map((kid) => {
             const row = cookieRowForKid(kid.id);
             const summary = cookieRowSummary(row);
-            const payment = row.payment || {};
+            const paymentNotes = (row.payments || []).map((payment) => payment.notes).filter(Boolean).join("; ");
             return `
               <tr class="${summary.paidInFull ? "is-paid" : ""}" data-cookie-row="${escapeAttr(kid.id)}">
                 <th class="sticky-col ember-col" scope="row">${escapeHtml(kid.name)}</th>
@@ -2709,30 +2804,14 @@ function renderCookieSummaryView() {
                 <td data-cookie-computed="boxes">${summary.boxes}</td>
                 <td data-cookie-computed="totalBoxes">${summary.totalBoxes} boxes</td>
                 <td data-cookie-computed="owed">${cookieMoney(summary.owed)}</td>
-                <td>
-                  <select data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-payment-field="status">
-                    ${COOKIE_PAYMENT_STATUSES.map(([value, label]) => `<option value="${escapeAttr(value)}" ${payment.status === value ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}
-                  </select>
-                </td>
-                <td>
-                  <input data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-payment-field="amountPaid" type="number" min="0" step="1" value="${escapeAttr(payment.status === "full" ? summary.owed : payment.amountPaid || "")}" ${payment.status === "full" ? "readonly" : ""} />
-                </td>
-                <td>
-                  <select data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-payment-field="method">
-                    ${COOKIE_PAYMENT_METHODS.map((method) => `<option value="${escapeAttr(method)}" ${payment.method === method ? "selected" : ""}>${escapeHtml(method || "Choose")}</option>`).join("")}
-                  </select>
-                </td>
-                <td>
-                  <input data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-payment-field="date" type="date" value="${escapeAttr(payment.date || "")}" />
-                </td>
+                <td data-cookie-computed="paymentCount">${summary.paymentCount}</td>
+                <td data-cookie-computed="paid">${cookieMoney(summary.paid)}</td>
                 <td data-cookie-computed="outstanding">${cookieMoney(summary.outstanding)}</td>
-                <td>
-                  <input data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-payment-field="notes" type="text" value="${escapeAttr(payment.notes || "")}" />
-                </td>
+                <td>${escapeHtml(paymentNotes)}</td>
                 <td><button class="text-button" data-cookie-open-kid="${escapeAttr(kid.id)}" type="button">Open</button></td>
               </tr>
             `;
-          }).join("") || `<tr><td colspan="14">${emptyState("Add Embers to build the cookie tracker.")}</td></tr>`}
+          }).join("") || `<tr><td colspan="12">${emptyState("Add Embers to build the cookie tracker.")}</td></tr>`}
         </tbody>
       </table>
     </div>
@@ -2752,22 +2831,15 @@ function handleCookieTrackerInput(event) {
     return;
   }
 
-  const paymentInput = event.target.closest("[data-cookie-kid-id][data-cookie-payment-field]");
+  const paymentInput = event.target.closest("[data-cookie-kid-id][data-cookie-payment-id][data-cookie-payment-field]");
   if (!paymentInput) return;
   const row = cookieRowForKid(paymentInput.dataset.cookieKidId);
+  const payment = row.payments.find((item) => item.id === paymentInput.dataset.cookiePaymentId);
+  if (!payment) return;
   const field = paymentInput.dataset.cookiePaymentField;
-  row.payment = row.payment || {};
-  row.payment[field] = field === "amountPaid" ? cookieNumber(paymentInput.value) : paymentInput.value;
-  if (field === "status") {
-    if (paymentInput.value === "unpaid") row.payment.amountPaid = "";
-    if (paymentInput.value === "full") row.payment.amountPaid = cookieRowSummary(row).owed;
-  }
+  payment[field] = field === "amount" ? cookieNumber(paymentInput.value) : paymentInput.value;
   saveState();
-  if (field === "status") {
-    renderCookieTracker();
-  } else {
-    updateCookieComputedDisplay(paymentInput.dataset.cookieKidId);
-  }
+  updateCookieComputedDisplay(paymentInput.dataset.cookieKidId);
 }
 
 function loadPlanIntoForm(plan) {
@@ -2836,7 +2908,9 @@ function renderKidBadgeModeControls() {
 
 function visibleKidBadgeRows() {
   const selectedKidId = $("#kidBadgeFilter")?.value || "all";
-  return state.kids.filter((kid) => selectedKidId === "all" || kid.id === selectedKidId);
+  return [...state.kids]
+    .filter((kid) => selectedKidId === "all" || kid.id === selectedKidId)
+    .sort(compareKidsForBadges);
 }
 
 function summaryBadgesForKids(kids) {
@@ -3905,6 +3979,9 @@ $("#kidForm").addEventListener("submit", (event) => {
     name,
     patrol: $("#kidPatrol").value.trim(),
     year: emberYearValue($("#kidYear").value),
+    leadership: leadershipValue($("#kidLeadership").value),
+    membershipYear: membershipYearValue($("#kidMembershipYear").value),
+    returningStatus: returningValue($("#kidReturningStatus").value),
   });
   saveState();
   event.currentTarget.reset();
@@ -3915,16 +3992,22 @@ $("#kidForm").addEventListener("submit", (event) => {
 $("#kidTable").addEventListener("change", (event) => {
   const yearInput = event.target.closest("[data-kid-year]");
   const patrolInput = event.target.closest("[data-kid-patrol]");
-  const input = yearInput || patrolInput;
+  const leadershipInput = event.target.closest("[data-kid-leadership]");
+  const membershipInput = event.target.closest("[data-kid-membership]");
+  const returningInput = event.target.closest("[data-kid-returning]");
+  const input = yearInput || patrolInput || leadershipInput || membershipInput || returningInput;
   if (!input) return;
-  const kidId = yearInput?.dataset.kidYear || patrolInput?.dataset.kidPatrol;
+  const kidId = yearInput?.dataset.kidYear || patrolInput?.dataset.kidPatrol || leadershipInput?.dataset.kidLeadership || membershipInput?.dataset.kidMembership || returningInput?.dataset.kidReturning;
   const kid = state.kids.find((item) => item.id === kidId);
   if (!kid) return;
   if (yearInput) kid.year = emberYearValue(input.value);
   if (patrolInput) kid.patrol = input.value.trim();
+  if (leadershipInput) kid.leadership = leadershipValue(input.value);
+  if (membershipInput) kid.membershipYear = membershipYearValue(input.value);
+  if (returningInput) kid.returningStatus = returningValue(input.value);
   saveState();
   renderAll();
-  showToast(yearInput ? "Ember year saved." : "Ember patrol saved.");
+  showToast("Roster updated.");
 });
 
 $("#badgeForm").addEventListener("submit", (event) => {
@@ -4082,6 +4165,24 @@ $("#cookieRows").addEventListener("click", (event) => {
     row.pickups = row.pickups.filter((pickup) => pickup.id !== removePickup.dataset.cookieRemovePickup);
     saveState();
     renderCookieTracker();
+    return;
+  }
+
+  const addPayment = event.target.closest("[data-cookie-add-payment]");
+  if (addPayment) {
+    const row = cookieRowForKid(addPayment.dataset.cookieAddPayment);
+    row.payments.push(newCookiePayment());
+    saveState();
+    renderCookieTracker();
+    return;
+  }
+
+  const removePayment = event.target.closest("[data-cookie-remove-payment][data-cookie-kid-id]");
+  if (removePayment) {
+    const row = cookieRowForKid(removePayment.dataset.cookieKidId);
+    row.payments = row.payments.filter((payment) => payment.id !== removePayment.dataset.cookieRemovePayment);
+    saveState();
+    renderCookieTracker();
   }
 });
 
@@ -4159,21 +4260,43 @@ function handleManualBadgeEdit(event, options = {}) {
 function handleBadgeHandoutEdit(event, options = {}) {
   const input = event.target.closest("[data-handout-kid-id][data-handout-badge-id]");
   if (!input) return false;
-  setBadgeHandedOut(input.dataset.handoutKidId, input.dataset.handoutBadgeId, input.checked);
-  saveState();
-  if (options.render) renderKidBadgesKeepingPosition();
+  const current = badgeHandedOut(input.dataset.handoutKidId, input.dataset.handoutBadgeId);
+  input.closest(".handout-check")?.querySelector(".handout-confirm-row")?.remove();
+  const confirmRow = document.createElement("span");
+  confirmRow.className = "handout-confirm-row";
+  confirmRow.innerHTML = `
+    <button class="primary-button" data-confirm-handout="${escapeAttr(input.checked ? "yes" : "no")}" data-confirm-kid-id="${escapeAttr(input.dataset.handoutKidId)}" data-confirm-badge-id="${escapeAttr(input.dataset.handoutBadgeId)}" type="button">Confirm</button>
+    <button class="text-button" data-cancel-handout type="button">Cancel</button>
+  `;
+  input.closest(".handout-check")?.append(confirmRow);
+  input.closest(".handout-check")?.classList.toggle("is-pending", input.checked !== current);
   return true;
 }
 
 $("#kidBadgeCards").addEventListener("change", (event) => {
   if (handleBadgeHandoutEdit(event, { render: true })) {
-    showToast("Badge handout updated.");
+    showToast("Confirm the badge handout change.");
     return;
   }
   if (handleManualBadgeEdit(event, { render: true })) showToast("Badge progress corrected.");
 });
 
 $("#kidBadgeCards").addEventListener("input", handleManualBadgeEdit);
+
+$("#kidBadgeCards").addEventListener("click", (event) => {
+  const confirm = event.target.closest("[data-confirm-handout]");
+  if (confirm) {
+    setBadgeHandedOut(confirm.dataset.confirmKidId, confirm.dataset.confirmBadgeId, confirm.dataset.confirmHandout === "yes");
+    saveState();
+    renderKidBadgesKeepingPosition();
+    showToast("Badge handout updated.");
+    return;
+  }
+  if (event.target.closest("[data-cancel-handout]")) {
+    renderKidBadgesKeepingPosition();
+    showToast("Badge handout change cancelled.");
+  }
+});
 
 function handlePatrolPointSheetEdit(event, options = {}) {
   const input = event.target.closest("[data-patrol-point-meeting-id][data-patrol-point-kid-id]");
