@@ -2742,7 +2742,7 @@ function renderCookieOrderProgress() {
 
 function cookieViewMode() {
   state.cookieTracker = state.cookieTracker || { rows: {}, orders: [], grocery: {} };
-  state.cookieTracker.view = state.cookieTracker.view === "summary" ? "summary" : "entry";
+  state.cookieTracker.view = ["entry", "progress", "summary"].includes(state.cookieTracker.view) ? state.cookieTracker.view : "entry";
   return state.cookieTracker.view;
 }
 
@@ -2823,11 +2823,15 @@ function renderCookieTracker() {
     select.value = selectedCookieKidId();
   }
   $("#cookieEntryMode").classList.toggle("is-selected", mode === "entry");
+  $("#cookieProgressMode").classList.toggle("is-selected", mode === "progress");
   $("#cookieSummaryMode").classList.toggle("is-selected", mode === "summary");
-  $(".cookie-entry-controls").classList.toggle("hidden", mode === "summary");
+  $(".cookie-entry-controls").classList.toggle("hidden", mode !== "entry");
+  $("#cookieProgressPanel").classList.toggle("hidden", mode !== "progress");
 
   if (mode === "summary") {
     renderCookieSummaryView();
+  } else if (mode === "progress") {
+    $("#cookieRows").innerHTML = emptyState("Use this page to track unit cookie order progress. Entry records still update these totals.");
   } else {
     const kid = state.kids.find((item) => item.id === selectedCookieKidId());
     $("#cookieRows").innerHTML = kid ? renderCookieEntryRow(kid) : emptyState("Add Embers to build the cookie tracker.");
@@ -4464,6 +4468,7 @@ $("#cookieOrderForm")?.addEventListener("submit", (event) => {
   const totalCost = cookieNumber($("#cookieOrderTotal").value);
   if (!name) return showToast("Name the cookie order.");
   cookieOrders().push(normalizeCookieOrder({ name, totalCost }));
+  state.cookieTracker.view = "progress";
   saveState();
   event.currentTarget.reset();
   renderCookieTracker();
@@ -4491,6 +4496,12 @@ $("#cookieOrderProgress")?.addEventListener("click", (event) => {
 
 $("#cookieEntryMode").addEventListener("click", () => {
   state.cookieTracker.view = "entry";
+  saveState();
+  renderCookieTracker();
+});
+
+$("#cookieProgressMode").addEventListener("click", () => {
+  state.cookieTracker.view = "progress";
   saveState();
   renderCookieTracker();
 });
