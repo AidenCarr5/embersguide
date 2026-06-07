@@ -2863,66 +2863,59 @@ function renderCookieEntryRow(kid) {
           <span class="cookie-status" data-cookie-computed="status">${cookieSummaryStatus(summary)}</span>
         </div>
         <div class="cookie-ember-details">
-          <div class="cookie-detail-heading">
-            <h3>Pickups</h3>
-            <button class="quiet-button" data-cookie-add-pickup="${escapeAttr(kid.id)}" type="button">Add pickup</button>
-          </div>
-          <div class="cookie-pickup-header">
-            <span>Pick up date</span>
-            <span>Order</span>
-            <span>Flavour</span>
-            <span>Cases</span>
-            <span>Boxes</span>
-            <span>Amount owed</span>
-            <span>Notes</span>
-            <span></span>
-          </div>
-          ${(row.pickups || []).map((pickup) => `
-            <div class="cookie-pickup-row">
-              <input data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-pickup-id="${escapeAttr(pickup.id)}" data-cookie-pickup-field="date" type="date" value="${escapeAttr(pickup.date || "")}" />
-              <select data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-pickup-id="${escapeAttr(pickup.id)}" data-cookie-pickup-field="orderId">
-                ${cookieOrderOptions(pickup.orderId || "")}
-              </select>
-              <select data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-pickup-id="${escapeAttr(pickup.id)}" data-cookie-pickup-field="flavor">
-                ${COOKIE_FLAVORS.map((flavor) => `<option value="${escapeAttr(flavor)}" ${pickup.flavor === flavor ? "selected" : ""}>${escapeHtml(flavor)}</option>`).join("")}
-              </select>
-              <input data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-pickup-id="${escapeAttr(pickup.id)}" data-cookie-pickup-field="cases" type="number" min="0" step="1" value="${escapeAttr(pickup.cases)}" />
-              <input data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-pickup-id="${escapeAttr(pickup.id)}" data-cookie-pickup-field="boxes" type="number" min="0" step="1" value="${escapeAttr(pickup.boxes)}" />
-              <strong data-cookie-pickup-total="${escapeAttr(pickup.id)}">${cookieMoney(cookiePickupOwed(pickup))}</strong>
-              <input data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-pickup-id="${escapeAttr(pickup.id)}" data-cookie-pickup-field="notes" type="text" placeholder="Optional note" value="${escapeAttr(pickup.notes || "")}" />
-              <button class="text-button" data-cookie-remove-pickup="${escapeAttr(pickup.id)}" data-cookie-kid-id="${escapeAttr(kid.id)}" type="button">Remove</button>
-            </div>
-          `).join("") || `<div class="empty-box">No cookie pickups yet.</div>`}
-          <div class="cookie-detail-heading">
-            <h3>Payments</h3>
-            <button class="quiet-button" data-cookie-add-payment="${escapeAttr(kid.id)}" type="button">Add payment</button>
-          </div>
-          <div class="cookie-pickup-header cookie-payment-header">
-            <span>Payment date</span>
-            <span>Order</span>
-            <span>Amount</span>
-            <span>Method</span>
-            <span>Notes</span>
-            <span></span>
-          </div>
-          ${(row.payments || []).map((payment) => `
-            <div class="cookie-pickup-row cookie-payment-row">
-              <input data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-payment-id="${escapeAttr(payment.id)}" data-cookie-payment-field="date" type="date" value="${escapeAttr(payment.date || "")}" />
-              <select data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-payment-id="${escapeAttr(payment.id)}" data-cookie-payment-field="orderId">
-                ${cookieOrderOptions(payment.orderId || "")}
-              </select>
-              <input data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-payment-id="${escapeAttr(payment.id)}" data-cookie-payment-field="amount" type="number" min="0" step="1" value="${escapeAttr(payment.amount || "")}" />
-              <select data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-payment-id="${escapeAttr(payment.id)}" data-cookie-payment-field="method">
-                ${COOKIE_PAYMENT_METHODS.map((method) => `<option value="${escapeAttr(method)}" ${payment.method === method ? "selected" : ""}>${escapeHtml(method || "Choose method")}</option>`).join("")}
-              </select>
-              <input data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-payment-id="${escapeAttr(payment.id)}" data-cookie-payment-field="notes" type="text" placeholder="Optional note" value="${escapeAttr(payment.notes || "")}" />
-              <button class="text-button" data-cookie-remove-payment="${escapeAttr(payment.id)}" data-cookie-kid-id="${escapeAttr(kid.id)}" type="button">Remove</button>
-            </div>
-          `).join("") || `<div class="empty-box">No payments recorded yet.</div>`}
           <div class="cookie-payment-panel">
             <div><span class="small-note">Amount owed</span><strong data-cookie-computed="owed">${cookieMoney(summary.owed)}</strong></div>
             <div><span class="small-note">Paid</span><strong data-cookie-computed="paid">${cookieMoney(summary.paid)}</strong></div>
             <div><span class="small-note">Outstanding</span><strong data-cookie-computed="outstanding">${cookieMoney(summary.outstanding)}</strong></div>
+          </div>
+          <div class="cookie-detail-heading">
+            <div>
+              <h3>Cookie pickups</h3>
+              <p class="muted">Record each time this Ember takes cookies home.</p>
+            </div>
+            <button class="quiet-button" data-cookie-add-pickup="${escapeAttr(kid.id)}" type="button">Add pickup</button>
+          </div>
+          <div class="cookie-entry-list">
+          ${(row.pickups || []).map((pickup) => `
+            <article class="cookie-entry-card">
+              <header>
+                <strong data-cookie-pickup-total="${escapeAttr(pickup.id)}">${cookieMoney(cookiePickupOwed(pickup))}</strong>
+                <button class="text-button" data-cookie-remove-pickup="${escapeAttr(pickup.id)}" data-cookie-kid-id="${escapeAttr(kid.id)}" type="button">Remove</button>
+              </header>
+              <div class="cookie-field-grid">
+                <label>Pick up date<input data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-pickup-id="${escapeAttr(pickup.id)}" data-cookie-pickup-field="date" type="date" value="${escapeAttr(pickup.date || "")}" /></label>
+                <label>Order<select data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-pickup-id="${escapeAttr(pickup.id)}" data-cookie-pickup-field="orderId">${cookieOrderOptions(pickup.orderId || "")}</select></label>
+                <label>Flavour<select data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-pickup-id="${escapeAttr(pickup.id)}" data-cookie-pickup-field="flavor">${COOKIE_FLAVORS.map((flavor) => `<option value="${escapeAttr(flavor)}" ${pickup.flavor === flavor ? "selected" : ""}>${escapeHtml(flavor)}</option>`).join("")}</select></label>
+                <label>Cases<input data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-pickup-id="${escapeAttr(pickup.id)}" data-cookie-pickup-field="cases" type="number" min="0" step="1" value="${escapeAttr(pickup.cases)}" /></label>
+                <label>Boxes<input data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-pickup-id="${escapeAttr(pickup.id)}" data-cookie-pickup-field="boxes" type="number" min="0" step="1" value="${escapeAttr(pickup.boxes)}" /></label>
+                <label class="wide-field">Notes<input data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-pickup-id="${escapeAttr(pickup.id)}" data-cookie-pickup-field="notes" type="text" placeholder="Optional note" value="${escapeAttr(pickup.notes || "")}" /></label>
+              </div>
+            </article>
+          `).join("") || `<div class="empty-box">No cookie pickups yet.</div>`}
+          </div>
+          <div class="cookie-detail-heading">
+            <div>
+              <h3>Payments</h3>
+              <p class="muted">Record each payment as it comes in.</p>
+            </div>
+            <button class="quiet-button" data-cookie-add-payment="${escapeAttr(kid.id)}" type="button">Add payment</button>
+          </div>
+          <div class="cookie-entry-list">
+          ${(row.payments || []).map((payment) => `
+            <article class="cookie-entry-card">
+              <header>
+                <strong>${cookieMoney(payment.amount || 0)}</strong>
+                <button class="text-button" data-cookie-remove-payment="${escapeAttr(payment.id)}" data-cookie-kid-id="${escapeAttr(kid.id)}" type="button">Remove</button>
+              </header>
+              <div class="cookie-field-grid">
+                <label>Payment date<input data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-payment-id="${escapeAttr(payment.id)}" data-cookie-payment-field="date" type="date" value="${escapeAttr(payment.date || "")}" /></label>
+                <label>Order<select data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-payment-id="${escapeAttr(payment.id)}" data-cookie-payment-field="orderId">${cookieOrderOptions(payment.orderId || "")}</select></label>
+                <label>Amount<input data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-payment-id="${escapeAttr(payment.id)}" data-cookie-payment-field="amount" type="number" min="0" step="1" value="${escapeAttr(payment.amount || "")}" /></label>
+                <label>Method<select data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-payment-id="${escapeAttr(payment.id)}" data-cookie-payment-field="method">${COOKIE_PAYMENT_METHODS.map((method) => `<option value="${escapeAttr(method)}" ${payment.method === method ? "selected" : ""}>${escapeHtml(method || "Choose method")}</option>`).join("")}</select></label>
+                <label class="wide-field">Notes<input data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-payment-id="${escapeAttr(payment.id)}" data-cookie-payment-field="notes" type="text" placeholder="Optional note" value="${escapeAttr(payment.notes || "")}" /></label>
+              </div>
+            </article>
+          `).join("") || `<div class="empty-box">No payments recorded yet.</div>`}
           </div>
         </div>
       </article>

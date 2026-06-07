@@ -2115,6 +2115,55 @@ textarea {
   font-size: 1rem;
 }
 
+.cookie-detail-heading p {
+  margin: 3px 0 0;
+  font-size: 0.82rem;
+}
+
+.cookie-entry-list {
+  display: grid;
+  gap: 10px;
+}
+
+.cookie-entry-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #c7dde8;
+  border-radius: var(--radius);
+  background: #fbfdfe;
+}
+
+.cookie-entry-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.cookie-entry-card header strong {
+  color: var(--guide-blue-dark);
+  font-size: 1.05rem;
+}
+
+.cookie-field-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+  gap: 10px;
+}
+
+.cookie-field-grid label {
+  display: grid;
+  gap: 5px;
+  color: var(--guide-blue-dark);
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.cookie-field-grid .wide-field {
+  grid-column: span 2;
+}
+
 .cookie-pickup-header,
 .cookie-pickup-row {
   grid-template-columns: minmax(135px, 0.8fr) minmax(150px, 0.85fr) minmax(170px, 1fr) minmax(82px, 0.45fr) minmax(82px, 0.45fr) minmax(110px, 0.55fr) minmax(180px, 1.2fr) auto;
