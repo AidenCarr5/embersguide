@@ -1245,6 +1245,16 @@ function compareKidsByRosterHierarchy(a, b) {
   return compareKidsByYear(a, b);
 }
 
+function compareKidsForRoster(a, b) {
+  const yearCompare = compareKidsByYear(a, b);
+  const yearA = emberYearValue(a.year);
+  const yearB = emberYearValue(b.year);
+  if (yearA !== yearB) return yearCompare;
+  const aReturn = ROSTER_STATUS_ORDER[returningValue(a.returningStatus)] ?? ROSTER_STATUS_ORDER[""];
+  const bReturn = ROSTER_STATUS_ORDER[returningValue(b.returningStatus)] ?? ROSTER_STATUS_ORDER[""];
+  return aReturn - bReturn || a.name.localeCompare(b.name);
+}
+
 function sortedKids() {
   return [...state.kids].sort(compareKidsByRosterHierarchy);
 }
@@ -1806,25 +1816,24 @@ function renderKids() {
   renderRosterFormOptions();
   $("#rosterChecked").checked = Boolean(state.settings.rosterChecked);
   const rows = [];
-  let activeStatus = null;
-  const kidsByStatus = sortedKids();
-  const statusCounts = kidsByStatus.reduce((counts, kid) => {
-    const key = returningValue(kid.returningStatus);
+  let activeYear = null;
+  const kidsByYear = [...state.kids].sort(compareKidsForRoster);
+  const yearCounts = kidsByYear.reduce((counts, kid) => {
+    const key = emberYearValue(kid.year);
     counts[key] = (counts[key] || 0) + 1;
     return counts;
   }, {});
-  kidsByStatus.forEach((kid) => {
+  kidsByYear.forEach((kid) => {
     const year = emberYearValue(kid.year);
-    const status = returningValue(kid.returningStatus);
-    const statusLabel = returningLabel(status);
-    if (status !== activeStatus) {
-      activeStatus = status;
+    const yearLabel = emberYearLabel(year);
+    if (year !== activeYear) {
+      activeYear = year;
       rows.push(`
-        <tr class="year-group-row roster-status-${escapeAttr(status || "unset")}">
+        <tr class="year-group-row year-group-${escapeAttr(year || "unset")}">
           <th colspan="7">
             <div class="year-group-content">
-              <span>${escapeHtml(statusLabel)}</span>
-              <small>${statusCounts[status]} ${statusCounts[status] === 1 ? "Ember" : "Embers"}</small>
+              <span>${escapeHtml(yearLabel)}</span>
+              <small>${yearCounts[year]} ${yearCounts[year] === 1 ? "Ember" : "Embers"}</small>
             </div>
           </th>
         </tr>
