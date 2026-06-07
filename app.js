@@ -2826,9 +2826,15 @@ function renderCookieTracker() {
   $("#cookieEntryMode").classList.toggle("is-selected", mode === "entry");
   $("#cookieProgressMode").classList.toggle("is-selected", mode === "progress");
   $("#cookieSummaryMode").classList.toggle("is-selected", mode === "summary");
-  $(".cookie-entry-controls").classList.toggle("hidden", mode !== "entry");
-  $(".cookie-help").classList.toggle("hidden", mode !== "entry");
-  $("#cookieProgressPanel").classList.toggle("hidden", mode !== "progress");
+  const entryControls = $(".cookie-entry-controls");
+  const cookieHelp = $(".cookie-help");
+  const progressPanel = $("#cookieProgressPanel");
+  entryControls.hidden = mode !== "entry";
+  cookieHelp.hidden = mode !== "entry";
+  progressPanel.hidden = mode !== "progress";
+  entryControls.classList.toggle("hidden", mode !== "entry");
+  cookieHelp.classList.toggle("hidden", mode !== "entry");
+  progressPanel.classList.toggle("hidden", mode !== "progress");
 
   if (mode === "summary") {
     renderCookieSummaryView();
