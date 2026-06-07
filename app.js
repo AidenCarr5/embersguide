@@ -2827,12 +2827,13 @@ function renderCookieTracker() {
   $("#cookieProgressMode").classList.toggle("is-selected", mode === "progress");
   $("#cookieSummaryMode").classList.toggle("is-selected", mode === "summary");
   $(".cookie-entry-controls").classList.toggle("hidden", mode !== "entry");
+  $(".cookie-help").classList.toggle("hidden", mode !== "entry");
   $("#cookieProgressPanel").classList.toggle("hidden", mode !== "progress");
 
   if (mode === "summary") {
     renderCookieSummaryView();
   } else if (mode === "progress") {
-    $("#cookieRows").innerHTML = emptyState("Use this page to track unit cookie order progress. Entry records still update these totals.");
+    $("#cookieRows").innerHTML = "";
   } else {
     const kid = state.kids.find((item) => item.id === selectedCookieKidId());
     $("#cookieRows").innerHTML = kid ? renderCookieEntryRow(kid) : emptyState("Add Embers to build the cookie tracker.");
