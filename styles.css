@@ -1229,6 +1229,10 @@ textarea {
   min-width: max(760px, 100%);
 }
 
+.badge-matrix.is-handout {
+  min-width: max(980px, 100%);
+}
+
 .badge-matrix th,
 .badge-matrix td {
   min-width: 128px;
@@ -1452,6 +1456,46 @@ textarea {
 
 .badge-matrix.is-handout td.is-earned {
   background: #f3fbf5;
+}
+
+.badge-matrix.is-handout th,
+.badge-matrix.is-handout td {
+  min-width: 78px;
+  max-width: 96px;
+  padding: 6px 6px;
+  font-size: 0.72rem;
+}
+
+.badge-matrix.is-handout thead th {
+  font-size: 0.64rem;
+  line-height: 1.1;
+}
+
+.badge-matrix.is-handout thead th img {
+  width: 34px;
+  height: 34px;
+  margin-bottom: 4px;
+}
+
+.badge-matrix.is-handout thead th small {
+  display: none;
+}
+
+.badge-matrix.is-handout .sticky-col {
+  min-width: 116px;
+  max-width: 116px;
+}
+
+.badge-matrix.is-handout .handout-check {
+  min-height: 30px;
+  grid-template-columns: auto;
+  justify-items: center;
+  gap: 3px;
+}
+
+.badge-matrix.is-handout .handout-check input {
+  width: 16px;
+  height: 16px;
 }
 
 .month-group {
