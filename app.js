@@ -523,6 +523,7 @@ let itineraryReturnTab = "planning";
 let chatHistory = [];
 let kidBadgeMode = "progress";
 let attendanceView = "roster";
+let patrolPointsMode = "earned";
 if (!state.kids.length) {
   loadExcelRosterIntoState({ replace: true });
   saveState();
@@ -3648,11 +3649,19 @@ function renderPatrolSpendHistory() {
   `;
 }
 
+function renderPatrolPointsMode() {
+  $("#patrolPointsEarnedToggle")?.classList.toggle("is-active", patrolPointsMode === "earned");
+  $("#patrolPointsCashoutToggle")?.classList.toggle("is-active", patrolPointsMode === "cashout");
+  $("#patrolPointsEarnedPanel")?.classList.toggle("hidden", patrolPointsMode !== "earned");
+  $("#patrolPointsCashoutPanel")?.classList.toggle("hidden", patrolPointsMode !== "cashout");
+}
+
 function renderPatrolPointsSheet() {
   const wrap = $("#patrolPointsSheet");
   if (!wrap) return;
   renderPatrolSpendControls();
   renderPatrolSpendHistory();
+  renderPatrolPointsMode();
   const meetings = [...state.meetings].sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.title).localeCompare(String(b.title)));
   if (!state.kids.length) {
     wrap.innerHTML = emptyState("Add Embers before tracking patrol points.");
@@ -4626,6 +4635,16 @@ $("#patrolPointsSheet").addEventListener("input", handlePatrolPointSheetEdit);
 $("#patrolPointsSheet").addEventListener("change", (event) => {
   handlePatrolPointSheetEdit(event, { render: true });
   showToast("Patrol points updated.");
+});
+
+$("#patrolPointsEarnedToggle")?.addEventListener("click", () => {
+  patrolPointsMode = "earned";
+  renderPatrolPointsMode();
+});
+
+$("#patrolPointsCashoutToggle")?.addEventListener("click", () => {
+  patrolPointsMode = "cashout";
+  renderPatrolPointsMode();
 });
 
 $("#patrolSpendForm")?.addEventListener("submit", (event) => {

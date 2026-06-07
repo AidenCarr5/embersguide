@@ -457,29 +457,38 @@
         <section class="surface">
           <div class="section-heading">
             <h2>Patrol Points</h2>
-            <span class="small-note">Edit earned points by meeting; Embers can cash out points while patrol totals stay earned.</span>
+            <div class="view-toggle badge-view-toggle" role="group" aria-label="Patrol points view">
+              <button class="tab is-active" id="patrolPointsEarnedToggle" type="button">Points</button>
+              <button class="tab" id="patrolPointsCashoutToggle" type="button">Cash out</button>
+            </div>
           </div>
-          <form id="patrolSpendForm" class="patrol-spend-form">
-            <label>
-              Ember
-              <select id="patrolSpendKid"></select>
-            </label>
-            <label>
-              Date
-              <input id="patrolSpendDate" type="date" />
-            </label>
-            <label>
-              Points cashed out
-              <input id="patrolSpendAmount" type="number" min="1" step="1" />
-            </label>
-            <label>
-              Note
-              <input id="patrolSpendNote" type="text" placeholder="Prize, reward, store item" />
-            </label>
-            <button class="quiet-button" type="submit">Cash out points</button>
-          </form>
-          <div id="patrolPointsSheet" class="kid-badge-grid"></div>
-          <div id="patrolSpendHistory" class="stack-list"></div>
+          <div id="patrolPointsEarnedPanel">
+            <p class="small-note">Edit earned points by meeting; patrol totals update from those earned points.</p>
+            <div id="patrolPointsSheet" class="kid-badge-grid"></div>
+          </div>
+          <div id="patrolPointsCashoutPanel" class="hidden">
+            <p class="small-note">Cash-outs reduce the individual Ember balance only. Patrol totals stay based on earned points.</p>
+            <form id="patrolSpendForm" class="patrol-spend-form">
+              <label>
+                Ember
+                <select id="patrolSpendKid"></select>
+              </label>
+              <label>
+                Date
+                <input id="patrolSpendDate" type="date" />
+              </label>
+              <label>
+                Points cashed out
+                <input id="patrolSpendAmount" type="number" min="1" step="1" />
+              </label>
+              <label>
+                Note
+                <input id="patrolSpendNote" type="text" placeholder="Prize, reward, store item" />
+              </label>
+              <button class="quiet-button" type="submit">Cash out points</button>
+            </form>
+            <div id="patrolSpendHistory" class="stack-list"></div>
+          </div>
         </section>
       </section>
 
