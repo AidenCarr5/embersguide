@@ -141,7 +141,8 @@ function buildEmptyData() {
     attendanceRecords: [],
     scheduledEvents: [],
     weeklyPlans: [],
-    cookieTracker: { rows: {}, grocery: {} },
+    patrolPointSpending: [],
+    cookieTracker: { rows: {}, orders: [], grocery: {} },
     settings: {
       rosterChecked: false,
       badgeProgressResetDone: false,
@@ -436,7 +437,7 @@ function buildDemoData() {
     },
   ];
 
-  return { kids, badges, meetings, baselineCredits: [], attendanceRecords: [], scheduledEvents: [], weeklyPlans: [], cookieTracker: { rows: {}, grocery: {} }, settings: { rosterChecked: true }, createdAt: new Date().toISOString() };
+  return { kids, badges, meetings, baselineCredits: [], attendanceRecords: [], scheduledEvents: [], weeklyPlans: [], patrolPointSpending: [], cookieTracker: { rows: {}, orders: [], grocery: {} }, settings: { rosterChecked: true }, createdAt: new Date().toISOString() };
 }
 
 const EMBER_YEAR_LABELS = {
@@ -468,9 +469,20 @@ const LEADERSHIP_LABELS = {
 };
 
 const RETURNING_LABELS = {
-  returning: "Returning",
+  returningThirdYear: "Returning 3rd year",
+  newThirdYear: "New 3rd year",
+  returningSecondYear: "Returning 2nd year",
   newSecondYear: "New 2nd year",
   firstYear: "1st year",
+};
+
+const ROSTER_STATUS_ORDER = {
+  returningThirdYear: 0,
+  newThirdYear: 1,
+  returningSecondYear: 2,
+  newSecondYear: 3,
+  firstYear: 4,
+  "": 5,
 };
 
 function membershipYearValue(value) {
@@ -485,7 +497,12 @@ function leadershipValue(value) {
 
 function returningValue(value) {
   const key = String(value || "").trim();
+  if (key === "returning") return "returningSecondYear";
   return RETURNING_LABELS[key] ? key : "";
+}
+
+function returningLabel(value) {
+  return RETURNING_LABELS[returningValue(value)] || "No status set";
 }
 
 let state = loadState();
@@ -548,8 +565,10 @@ function normalizeState(value) {
     attendanceRecords: Array.isArray(value.attendanceRecords) ? value.attendanceRecords : [],
     scheduledEvents: Array.isArray(value.scheduledEvents) ? value.scheduledEvents : [],
     weeklyPlans: Array.isArray(value.weeklyPlans) ? value.weeklyPlans : [],
+    patrolPointSpending: Array.isArray(value.patrolPointSpending) ? value.patrolPointSpending.map(normalizePatrolSpendEntry) : [],
     cookieTracker: value.cookieTracker && typeof value.cookieTracker === "object" ? {
       rows: value.cookieTracker.rows && typeof value.cookieTracker.rows === "object" ? value.cookieTracker.rows : {},
+      orders: Array.isArray(value.cookieTracker.orders) ? value.cookieTracker.orders.map(normalizeCookieOrder) : [],
       grocery: value.cookieTracker.grocery && typeof value.cookieTracker.grocery === "object" ? value.cookieTracker.grocery : {},
     } : fallback.cookieTracker,
     settings: {
@@ -1218,16 +1237,20 @@ function compareKidsByYear(a, b) {
   return yearA - yearB || a.name.localeCompare(b.name);
 }
 
+function compareKidsByRosterHierarchy(a, b) {
+  const returnOrder = ROSTER_STATUS_ORDER;
+  const aReturn = returnOrder[returningValue(a.returningStatus)] ?? returnOrder[""];
+  const bReturn = returnOrder[returningValue(b.returningStatus)] ?? returnOrder[""];
+  if (aReturn !== bReturn) return aReturn - bReturn;
+  return compareKidsByYear(a, b);
+}
+
 function sortedKids() {
-  return [...state.kids].sort(compareKidsByYear);
+  return [...state.kids].sort(compareKidsByRosterHierarchy);
 }
 
 function compareKidsForBadges(a, b) {
-  const returnOrder = { returning: 0, newSecondYear: 1, firstYear: 2, "": 3 };
-  const aReturn = returnOrder[returningValue(a.returningStatus)] ?? 3;
-  const bReturn = returnOrder[returningValue(b.returningStatus)] ?? 3;
-  if (aReturn !== bReturn) return aReturn - bReturn;
-  return compareKidsByYear(a, b);
+  return compareKidsByRosterHierarchy(a, b);
 }
 
 function patrolOptions(current = "") {
@@ -1783,24 +1806,25 @@ function renderKids() {
   renderRosterFormOptions();
   $("#rosterChecked").checked = Boolean(state.settings.rosterChecked);
   const rows = [];
-  let activeYear = null;
-  const kidsByYear = sortedKids();
-  const yearCounts = kidsByYear.reduce((counts, kid) => {
-    const key = emberYearValue(kid.year);
+  let activeStatus = null;
+  const kidsByStatus = sortedKids();
+  const statusCounts = kidsByStatus.reduce((counts, kid) => {
+    const key = returningValue(kid.returningStatus);
     counts[key] = (counts[key] || 0) + 1;
     return counts;
   }, {});
-  kidsByYear.forEach((kid) => {
+  kidsByStatus.forEach((kid) => {
     const year = emberYearValue(kid.year);
-    const yearLabel = emberYearLabel(year);
-    if (year !== activeYear) {
-      activeYear = year;
+    const status = returningValue(kid.returningStatus);
+    const statusLabel = returningLabel(status);
+    if (status !== activeStatus) {
+      activeStatus = status;
       rows.push(`
-        <tr class="year-group-row year-group-${escapeAttr(year || "unset")}">
+        <tr class="year-group-row roster-status-${escapeAttr(status || "unset")}">
           <th colspan="7">
             <div class="year-group-content">
-              <span>${escapeHtml(yearLabel)}</span>
-              <small>${yearCounts[year]} ${yearCounts[year] === 1 ? "Ember" : "Embers"}</small>
+              <span>${escapeHtml(statusLabel)}</span>
+              <small>${statusCounts[status]} ${statusCounts[status] === 1 ? "Ember" : "Embers"}</small>
             </div>
           </th>
         </tr>
@@ -1947,6 +1971,8 @@ function renderCalendarEventDetail(records, kidById) {
   }
   selectedCalendarEventId = selected.id;
   const missingNames = (selected.missingKidIds || []).map((kidId) => kidById.get(kidId)?.name).filter(Boolean);
+  const activities = itineraryActivitiesForRecord(selected).filter((activity) => String(activity || "").trim());
+  const overview = selected.summary || selected.notes || "";
   detail.innerHTML = `
     <article class="calendar-detail-card">
       <header>
@@ -1957,9 +1983,27 @@ function renderCalendarEventDetail(records, kidById) {
         ${selected.source === "scheduled" ? `<button class="text-button" data-remove-scheduled-event="${escapeAttr(selected.id)}" type="button">Delete</button>` : ""}
         ${selected.source === "planned" ? `<button class="text-button" data-remove-plan="${escapeAttr(selected.planId)}" type="button">Delete</button>` : ""}
       </header>
-      ${selected.summary ? `<p>${escapeHtml(selected.summary)}</p>` : ""}
+      <section class="calendar-detail-section">
+        <h4>Missed</h4>
+        <div class="tag-row">
+          ${missingNames.length ? missingNames.map((name) => `<span class="tag warning">${escapeHtml(name)}</span>`).join("") : `<span class="tag earned">No one missed</span>`}
+        </div>
+      </section>
+      <section class="calendar-detail-section">
+        <h4>Itinerary</h4>
+        ${overview ? `<p class="linked-text">${linkifyText(overview)}</p>` : ""}
+        ${activities.length ? `
+          <div class="itinerary-activity-list">
+            ${activities.map((activity) => `
+              <article class="itinerary-activity">
+                <div class="linked-text">${linkifyText(activity)}</div>
+              </article>
+            `).join("")}
+          </div>
+        ` : overview ? "" : `<p class="muted">No itinerary notes recorded yet.</p>`}
+      </section>
       <div class="tag-row">
-        ${selected.source === "planned" ? `<span class="tag">Planned only - no badge credit yet</span>` : missingNames.length ? missingNames.map((name) => `<span class="tag warning">${escapeHtml(name)}</span>`).join("") : selected.source === "scheduled" ? `<span class="tag">Attendance not recorded yet</span>` : `<span class="tag earned">Everyone present</span>`}
+        ${selected.source === "planned" ? `<span class="tag">Planned only - no badge credit yet</span>` : selected.source === "scheduled" ? `<span class="tag">Attendance not recorded yet</span>` : ""}
       </div>
     </article>
   `;
@@ -2488,9 +2532,29 @@ const COOKIE_FLAVORS = ["Mint", "Chocolate/Vanilla"];
 const COOKIE_PAYMENT_METHODS = ["", "Card", "Cash", "Other"];
 
 function cookieRows() {
-  state.cookieTracker = state.cookieTracker || { rows: {}, grocery: {} };
+  state.cookieTracker = state.cookieTracker || { rows: {}, orders: [], grocery: {} };
   state.cookieTracker.rows = state.cookieTracker.rows || {};
   return state.cookieTracker.rows;
+}
+
+function normalizeCookieOrder(order = {}) {
+  return {
+    id: order.id || uid("cookie-order"),
+    name: order.name || "Cookie order",
+    totalCost: cookieNumber(order.totalCost ?? order.amount ?? order.cost),
+    notes: order.notes || "",
+  };
+}
+
+function cookieOrders() {
+  state.cookieTracker = state.cookieTracker || { rows: {}, orders: [], grocery: {} };
+  state.cookieTracker.orders = Array.isArray(state.cookieTracker.orders) ? state.cookieTracker.orders.map(normalizeCookieOrder) : [];
+  return state.cookieTracker.orders;
+}
+
+function cookieOrderOptions(selected = "") {
+  const orders = cookieOrders();
+  return `<option value="">No order selected</option>${orders.map((order) => `<option value="${escapeAttr(order.id)}" ${selected === order.id ? "selected" : ""}>${escapeHtml(order.name)}</option>`).join("")}`;
 }
 
 function newCookiePickup() {
@@ -2500,6 +2564,7 @@ function newCookiePickup() {
     flavor: "Mint",
     cases: 0,
     boxes: 0,
+    orderId: cookieOrders()[0]?.id || "",
     notes: "",
   };
 }
@@ -2510,6 +2575,7 @@ function newCookiePayment() {
     date: today(),
     amount: 0,
     method: "",
+    orderId: cookieOrders()[0]?.id || "",
     notes: "",
   };
 }
@@ -2533,6 +2599,7 @@ function normalizeCookieRow(row = {}) {
     flavor: COOKIE_FLAVORS.includes(pickup.flavor) ? pickup.flavor : "Mint",
     cases: cookieNumber(pickup.cases),
     boxes: cookieNumber(pickup.boxes),
+    orderId: cookieOrders().some((order) => order.id === pickup.orderId) ? pickup.orderId : "",
     notes: pickup.notes || "",
   }));
   const legacyPayment = row.payment || {};
@@ -2544,6 +2611,7 @@ function normalizeCookieRow(row = {}) {
     date: payment.date || "",
     amount: cookieNumber(payment.amount),
     method: COOKIE_PAYMENT_METHODS.includes(payment.method) ? payment.method : "",
+    orderId: cookieOrders().some((order) => order.id === payment.orderId) ? payment.orderId : "",
     notes: payment.notes || "",
   }));
   if (!payments.length && legacyPaymentAmount) {
@@ -2552,6 +2620,7 @@ function normalizeCookieRow(row = {}) {
       date: legacyPayment.date || row.paymentDate || "",
       amount: legacyPaymentAmount,
       method: COOKIE_PAYMENT_METHODS.includes(legacyPayment.method || row.paymentMethod) ? (legacyPayment.method || row.paymentMethod) : "",
+      orderId: "",
       notes: legacyPayment.notes || row.paymentNotes || "",
     });
   }
@@ -2603,15 +2672,74 @@ function cookieRowSummary(row) {
   };
 }
 
+function cookieOrderStats(orderId) {
+  let paid = 0;
+  let owed = 0;
+  let cases = 0;
+  let boxes = 0;
+  state.kids.forEach((kid) => {
+    const row = cookieRowForKid(kid.id);
+    (row.pickups || []).forEach((pickup) => {
+      if (pickup.orderId !== orderId) return;
+      owed += cookiePickupOwed(pickup);
+      cases += cookieNumber(pickup.cases);
+      boxes += cookieNumber(pickup.boxes);
+    });
+    (row.payments || []).forEach((payment) => {
+      if (payment.orderId === orderId) paid += cookieNumber(payment.amount);
+    });
+  });
+  const order = cookieOrders().find((item) => item.id === orderId);
+  const target = cookieNumber(order?.totalCost);
+  return {
+    target,
+    paid,
+    owed,
+    cases,
+    boxes,
+    totalBoxes: cases * 12 + boxes,
+    percent: target ? Math.min(100, Math.round((paid / target) * 100)) : 0,
+  };
+}
+
+function renderCookieOrderProgress() {
+  const wrap = $("#cookieOrderProgress");
+  if (!wrap) return;
+  const orders = cookieOrders();
+  wrap.innerHTML = orders.map((order) => {
+    const stats = cookieOrderStats(order.id);
+    return `
+      <article class="cookie-order-card">
+        <header>
+          <div>
+            <h3>${escapeHtml(order.name)}</h3>
+            <p class="muted">${cookieMoney(stats.paid)} paid of ${cookieMoney(stats.target)} unit order cost</p>
+          </div>
+          <div class="inline-actions">
+            <span class="tag">${stats.totalBoxes} boxes out</span>
+            <button class="text-button" data-remove-cookie-order="${escapeAttr(order.id)}" type="button">Remove</button>
+          </div>
+        </header>
+        ${progressBar(stats.percent)}
+        <div class="cookie-order-stats">
+          <span>Owed by families <strong>${cookieMoney(stats.owed)}</strong></span>
+          <span>Cases <strong>${stats.cases}</strong></span>
+          <span>Loose boxes <strong>${stats.boxes}</strong></span>
+        </div>
+      </article>
+    `;
+  }).join("") || `<div class="empty-box">Add Fall, Winter, or another cookie order to track unit progress.</div>`;
+}
+
 function cookieViewMode() {
-  state.cookieTracker = state.cookieTracker || { rows: {}, grocery: {} };
+  state.cookieTracker = state.cookieTracker || { rows: {}, orders: [], grocery: {} };
   state.cookieTracker.view = state.cookieTracker.view === "summary" ? "summary" : "entry";
   return state.cookieTracker.view;
 }
 
 function selectedCookieKidId() {
-  state.cookieTracker = state.cookieTracker || { rows: {}, grocery: {} };
-  const fallbackKid = state.kids[0];
+  state.cookieTracker = state.cookieTracker || { rows: {}, orders: [], grocery: {} };
+  const fallbackKid = sortedKids()[0];
   if (!fallbackKid) return "";
   if (!state.kids.some((kid) => kid.id === state.cookieTracker.selectedKidId)) {
     state.cookieTracker.selectedKidId = fallbackKid.id;
@@ -2675,13 +2803,14 @@ function updateCookieComputedDisplay(kidId) {
     if (total) total.textContent = cookieMoney(cookiePickupOwed(pickup));
   });
   renderCookieTotals();
+  renderCookieOrderProgress();
 }
 
 function renderCookieTracker() {
   const mode = cookieViewMode();
   const select = $("#cookieKidSelect");
   if (select) {
-    select.innerHTML = state.kids.map((kid) => `<option value="${escapeAttr(kid.id)}">${escapeHtml(kid.name)}</option>`).join("");
+    select.innerHTML = sortedKids().map((kid) => `<option value="${escapeAttr(kid.id)}">${escapeHtml(kid.name)}</option>`).join("");
     select.value = selectedCookieKidId();
   }
   $("#cookieEntryMode").classList.toggle("is-selected", mode === "entry");
@@ -2695,6 +2824,7 @@ function renderCookieTracker() {
     $("#cookieRows").innerHTML = kid ? renderCookieEntryRow(kid) : emptyState("Add Embers to build the cookie tracker.");
   }
   renderCookieTotals();
+  renderCookieOrderProgress();
 }
 
 function renderCookieEntryRow(kid) {
@@ -2718,6 +2848,7 @@ function renderCookieEntryRow(kid) {
           </div>
           <div class="cookie-pickup-header">
             <span>Pick up date</span>
+            <span>Order</span>
             <span>Flavour</span>
             <span>Cases</span>
             <span>Boxes</span>
@@ -2728,6 +2859,9 @@ function renderCookieEntryRow(kid) {
           ${(row.pickups || []).map((pickup) => `
             <div class="cookie-pickup-row">
               <input data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-pickup-id="${escapeAttr(pickup.id)}" data-cookie-pickup-field="date" type="date" value="${escapeAttr(pickup.date || "")}" />
+              <select data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-pickup-id="${escapeAttr(pickup.id)}" data-cookie-pickup-field="orderId">
+                ${cookieOrderOptions(pickup.orderId || "")}
+              </select>
               <select data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-pickup-id="${escapeAttr(pickup.id)}" data-cookie-pickup-field="flavor">
                 ${COOKIE_FLAVORS.map((flavor) => `<option value="${escapeAttr(flavor)}" ${pickup.flavor === flavor ? "selected" : ""}>${escapeHtml(flavor)}</option>`).join("")}
               </select>
@@ -2744,6 +2878,7 @@ function renderCookieEntryRow(kid) {
           </div>
           <div class="cookie-pickup-header cookie-payment-header">
             <span>Payment date</span>
+            <span>Order</span>
             <span>Amount</span>
             <span>Method</span>
             <span>Notes</span>
@@ -2752,6 +2887,9 @@ function renderCookieEntryRow(kid) {
           ${(row.payments || []).map((payment) => `
             <div class="cookie-pickup-row cookie-payment-row">
               <input data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-payment-id="${escapeAttr(payment.id)}" data-cookie-payment-field="date" type="date" value="${escapeAttr(payment.date || "")}" />
+              <select data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-payment-id="${escapeAttr(payment.id)}" data-cookie-payment-field="orderId">
+                ${cookieOrderOptions(payment.orderId || "")}
+              </select>
               <input data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-payment-id="${escapeAttr(payment.id)}" data-cookie-payment-field="amount" type="number" min="0" step="1" value="${escapeAttr(payment.amount || "")}" />
               <select data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-payment-id="${escapeAttr(payment.id)}" data-cookie-payment-field="method">
                 ${COOKIE_PAYMENT_METHODS.map((method) => `<option value="${escapeAttr(method)}" ${payment.method === method ? "selected" : ""}>${escapeHtml(method || "Choose method")}</option>`).join("")}
@@ -2782,6 +2920,7 @@ function renderCookieSummaryView() {
             <th>Cases</th>
             <th>Boxes</th>
             <th>Cookies out</th>
+            <th>By order</th>
             <th>Owed</th>
             <th>Payments</th>
             <th>Paid</th>
@@ -2791,10 +2930,19 @@ function renderCookieSummaryView() {
           </tr>
         </thead>
         <tbody>
-          ${state.kids.map((kid) => {
+          ${sortedKids().map((kid) => {
             const row = cookieRowForKid(kid.id);
             const summary = cookieRowSummary(row);
             const paymentNotes = (row.payments || []).map((payment) => payment.notes).filter(Boolean).join("; ");
+            const byOrder = cookieOrders()
+              .map((order) => {
+                const boxes = (row.pickups || [])
+                  .filter((pickup) => pickup.orderId === order.id)
+                  .reduce((sum, pickup) => sum + cookieNumber(pickup.cases) * 12 + cookieNumber(pickup.boxes), 0);
+                return boxes ? `${order.name}: ${boxes}` : "";
+              })
+              .filter(Boolean)
+              .join("; ");
             return `
               <tr class="${summary.paidInFull ? "is-paid" : ""}" data-cookie-row="${escapeAttr(kid.id)}">
                 <th class="sticky-col ember-col" scope="row">${escapeHtml(kid.name)}</th>
@@ -2803,6 +2951,7 @@ function renderCookieSummaryView() {
                 <td data-cookie-computed="cases">${summary.cases}</td>
                 <td data-cookie-computed="boxes">${summary.boxes}</td>
                 <td data-cookie-computed="totalBoxes">${summary.totalBoxes} boxes</td>
+                <td>${escapeHtml(byOrder || "No order")}</td>
                 <td data-cookie-computed="owed">${cookieMoney(summary.owed)}</td>
                 <td data-cookie-computed="paymentCount">${summary.paymentCount}</td>
                 <td data-cookie-computed="paid">${cookieMoney(summary.paid)}</td>
@@ -2811,7 +2960,7 @@ function renderCookieSummaryView() {
                 <td><button class="text-button" data-cookie-open-kid="${escapeAttr(kid.id)}" type="button">Open</button></td>
               </tr>
             `;
-          }).join("") || `<tr><td colspan="12">${emptyState("Add Embers to build the cookie tracker.")}</td></tr>`}
+          }).join("") || `<tr><td colspan="13">${emptyState("Add Embers to build the cookie tracker.")}</td></tr>`}
         </tbody>
       </table>
     </div>
@@ -2827,6 +2976,10 @@ function handleCookieTrackerInput(event) {
     const field = pickupInput.dataset.cookiePickupField;
     pickup[field] = ["cases", "boxes"].includes(field) ? cookieNumber(pickupInput.value) : pickupInput.value;
     saveState();
+    if (field === "orderId") {
+      renderCookieTracker();
+      return;
+    }
     updateCookieComputedDisplay(pickupInput.dataset.cookieKidId);
     return;
   }
@@ -2839,6 +2992,10 @@ function handleCookieTrackerInput(event) {
   const field = paymentInput.dataset.cookiePaymentField;
   payment[field] = field === "amount" ? cookieNumber(paymentInput.value) : paymentInput.value;
   saveState();
+  if (field === "orderId") {
+    renderCookieTracker();
+    return;
+  }
   updateCookieComputedDisplay(paymentInput.dataset.cookieKidId);
 }
 
@@ -3308,6 +3465,16 @@ function rankLabel(index) {
   return ["1st", "2nd", "3rd"][index] || `${index + 1}th`;
 }
 
+function normalizePatrolSpendEntry(entry = {}) {
+  return {
+    id: entry.id || uid("patrol-spend"),
+    kidId: entry.kidId || "",
+    date: entry.date || today(),
+    amount: Math.max(0, Number(entry.amount) || 0),
+    note: entry.note || "",
+  };
+}
+
 function currentPatrolPointValues() {
   const values = {};
   $$("#patrolPointInputs input[data-patrol-kid-id]").forEach((input) => {
@@ -3413,15 +3580,66 @@ function emberPointTotal(kidId) {
   return state.meetings.reduce((sum, meeting) => sum + meetingPointValue(meeting, kidId), 0);
 }
 
+function emberPointSpent(kidId) {
+  return (state.patrolPointSpending || [])
+    .filter((entry) => entry.kidId === kidId)
+    .reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0);
+}
+
+function emberPointBalance(kidId) {
+  return Math.max(0, emberPointTotal(kidId) - emberPointSpent(kidId));
+}
+
 function patrolPointTotal(patrol) {
   return state.kids
     .filter((kid) => (kid.patrol || "No patrol") === patrol)
     .reduce((sum, kid) => sum + emberPointTotal(kid.id), 0);
 }
 
+function renderPatrolSpendControls() {
+  const select = $("#patrolSpendKid");
+  if (!select) return;
+  const current = select.value;
+  select.innerHTML = sortedKids().map((kid) => `<option value="${escapeAttr(kid.id)}">${escapeHtml(kid.name)} - ${emberPointBalance(kid.id)} available</option>`).join("");
+  select.value = state.kids.some((kid) => kid.id === current) ? current : (state.kids[0]?.id || "");
+  if (!$("#patrolSpendDate").value) $("#patrolSpendDate").value = today();
+}
+
+function renderPatrolSpendHistory() {
+  const wrap = $("#patrolSpendHistory");
+  if (!wrap) return;
+  const kidById = new Map(state.kids.map((kid) => [kid.id, kid]));
+  const entries = [...(state.patrolPointSpending || [])].sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  wrap.innerHTML = `
+    <div class="section-heading">
+      <h3>Point spending history</h3>
+      <span class="small-note">Cash-outs reduce the Ember balance only; patrol earned totals stay the same.</span>
+    </div>
+    ${entries.map((entry) => {
+      const kid = kidById.get(entry.kidId);
+      return `
+        <article class="stack-item">
+          <header>
+            <div>
+              <h3>${escapeHtml(kid?.name || "Removed Ember")}</h3>
+              <p class="muted">${escapeHtml(formatDate(entry.date) || "No date")} - ${escapeHtml(entry.note || "No note")}</p>
+            </div>
+            <div class="inline-actions">
+              <span class="tag warning">-${Number(entry.amount) || 0}</span>
+              <button class="text-button" data-remove-patrol-spend="${escapeAttr(entry.id)}" type="button">Remove</button>
+            </div>
+          </header>
+        </article>
+      `;
+    }).join("") || emptyState("No point spending recorded yet.")}
+  `;
+}
+
 function renderPatrolPointsSheet() {
   const wrap = $("#patrolPointsSheet");
   if (!wrap) return;
+  renderPatrolSpendControls();
+  renderPatrolSpendHistory();
   const meetings = [...state.meetings].sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.title).localeCompare(String(b.title)));
   if (!state.kids.length) {
     wrap.innerHTML = emptyState("Add Embers before tracking patrol points.");
@@ -3450,7 +3668,9 @@ function renderPatrolPointsSheet() {
                 <small>${escapeHtml(meeting.title || "Untitled")}</small>
               </th>
             `).join("")}
-            <th>Total</th>
+            <th>Earned</th>
+            <th>Spent</th>
+            <th>Balance</th>
           </tr>
         </thead>
         <tbody>
@@ -3464,6 +3684,8 @@ function renderPatrolPointsSheet() {
                   return `<td>${total}</td>`;
                 }).join("")}
                 <td><strong>${patrolPointTotal(patrol)}</strong></td>
+                <td></td>
+                <td></td>
               </tr>
               ${kids.map((kid) => `
                 <tr>
@@ -3483,6 +3705,8 @@ function renderPatrolPointsSheet() {
                     </td>
                   `).join("")}
                   <td><strong>${emberPointTotal(kid.id)}</strong></td>
+                  <td>${emberPointSpent(kid.id)}</td>
+                  <td><strong>${emberPointBalance(kid.id)}</strong></td>
                 </tr>
               `).join("")}
             `;
@@ -3707,6 +3931,49 @@ function csvCell(value) {
   return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 
+function openRemoveKidModal(kidId) {
+  const kid = state.kids.find((item) => item.id === kidId);
+  if (!kid) return;
+  $("#removeKidId").value = kid.id;
+  $("#removeKidTitle").textContent = `Remove ${kid.name}?`;
+  $("#removeKidMessage").textContent = `This will permanently remove ${kid.name} and delete all tracker information connected to them, including attendance, badge corrections, cookie entries, and patrol point history.`;
+  $("#removeKidModal").hidden = false;
+}
+
+function closeRemoveKidModal() {
+  $("#removeKidId").value = "";
+  $("#removeKidModal").hidden = true;
+}
+
+function removeKidAndConnectedData(kidId) {
+  state.kids = state.kids.filter((kid) => kid.id !== kidId);
+  if (state.cookieTracker?.rows) delete state.cookieTracker.rows[kidId];
+  state.badgeHandouts = Object.fromEntries(Object.entries(state.badgeHandouts || {}).filter(([key]) => key.split("|")[0] !== kidId));
+  state.manualBadgeAdjustments = Object.fromEntries(Object.entries(state.manualBadgeAdjustments || {}).filter(([key]) => key.split("|")[0] !== kidId));
+  state.baselineCredits = (state.baselineCredits || []).filter((entry) => entry.kidId !== kidId);
+  state.patrolPointSpending = (state.patrolPointSpending || []).filter((entry) => entry.kidId !== kidId);
+  if (!state.kids.length) state.settings.rosterChecked = false;
+  state.meetings = state.meetings.map((meeting) => {
+    const emberPoints = { ...(meeting.emberPoints || {}) };
+    delete emberPoints[kidId];
+    const next = {
+      ...meeting,
+      presentKidIds: (meeting.presentKidIds || []).filter((id) => id !== kidId),
+      emberPoints,
+    };
+    recalculateMeetingPatrolPoints(next);
+    return next;
+  });
+  state.attendanceRecords = (state.attendanceRecords || []).map((record) => ({
+    ...record,
+    missingKidIds: (record.missingKidIds || []).filter((id) => id !== kidId),
+  }));
+  state.scheduledEvents = (state.scheduledEvents || []).map((record) => ({
+    ...record,
+    missingKidIds: (record.missingKidIds || []).filter((id) => id !== kidId),
+  }));
+}
+
 document.addEventListener("click", (event) => {
   const tabTarget = event.target.closest("[data-tab-target]");
   if (tabTarget) switchTab(tabTarget.dataset.tabTarget);
@@ -3750,18 +4017,8 @@ document.addEventListener("click", (event) => {
 
   const removeKid = event.target.closest("[data-remove-kid]");
   if (removeKid) {
-    const id = removeKid.dataset.removeKid;
-    state.kids = state.kids.filter((kid) => kid.id !== id);
-    if (state.cookieTracker?.rows) delete state.cookieTracker.rows[id];
-    state.badgeHandouts = Object.fromEntries(Object.entries(state.badgeHandouts || {}).filter(([key]) => key.split("|")[0] !== id));
-    if (!state.kids.length) state.settings.rosterChecked = false;
-    state.meetings = state.meetings.map((meeting) => ({
-      ...meeting,
-      presentKidIds: (meeting.presentKidIds || []).filter((kidId) => kidId !== id),
-    }));
-    saveState();
-    renderAll();
-    showToast("Ember removed.");
+    openRemoveKidModal(removeKid.dataset.removeKid);
+    return;
   }
 
   const editBadge = event.target.closest("[data-edit-badge]");
@@ -3934,7 +4191,6 @@ document.addEventListener("keydown", (event) => {
 });
 
 setDefaultMeetingDate();
-$("#scheduleEventDate").value = today();
 $("#planningDate").value = today();
 
 $("#meetingForm").addEventListener("submit", (event) => {
@@ -4193,6 +4449,37 @@ $("#cookieKidSelect").addEventListener("change", (event) => {
   renderCookieTracker();
 });
 
+$("#cookieOrderForm")?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const name = $("#cookieOrderName").value.trim();
+  const totalCost = cookieNumber($("#cookieOrderTotal").value);
+  if (!name) return showToast("Name the cookie order.");
+  cookieOrders().push(normalizeCookieOrder({ name, totalCost }));
+  saveState();
+  event.currentTarget.reset();
+  renderCookieTracker();
+  showToast("Cookie order added.");
+});
+
+$("#cookieOrderProgress")?.addEventListener("click", (event) => {
+  const remove = event.target.closest("[data-remove-cookie-order]");
+  if (!remove) return;
+  const orderId = remove.dataset.removeCookieOrder;
+  state.cookieTracker.orders = cookieOrders().filter((order) => order.id !== orderId);
+  state.kids.forEach((kid) => {
+    const row = cookieRowForKid(kid.id);
+    (row.pickups || []).forEach((pickup) => {
+      if (pickup.orderId === orderId) pickup.orderId = "";
+    });
+    (row.payments || []).forEach((payment) => {
+      if (payment.orderId === orderId) payment.orderId = "";
+    });
+  });
+  saveState();
+  renderCookieTracker();
+  showToast("Cookie order removed.");
+});
+
 $("#cookieEntryMode").addEventListener("click", () => {
   state.cookieTracker.view = "entry";
   saveState();
@@ -4321,6 +4608,33 @@ $("#patrolPointsSheet").addEventListener("change", (event) => {
   showToast("Patrol points updated.");
 });
 
+$("#patrolSpendForm")?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const kidId = $("#patrolSpendKid").value;
+  const amount = Math.max(0, Number($("#patrolSpendAmount").value) || 0);
+  if (!kidId || !amount) return showToast("Choose an Ember and amount to cash out.");
+  state.patrolPointSpending.push(normalizePatrolSpendEntry({
+    kidId,
+    date: $("#patrolSpendDate").value || today(),
+    amount,
+    note: $("#patrolSpendNote").value.trim(),
+  }));
+  saveState();
+  event.currentTarget.reset();
+  $("#patrolSpendDate").value = today();
+  renderPatrolPointsSheetKeepingPosition();
+  showToast("Point cash-out recorded.");
+});
+
+$("#patrolSpendHistory")?.addEventListener("click", (event) => {
+  const remove = event.target.closest("[data-remove-patrol-spend]");
+  if (!remove) return;
+  state.patrolPointSpending = (state.patrolPointSpending || []).filter((entry) => entry.id !== remove.dataset.removePatrolSpend);
+  saveState();
+  renderPatrolPointsSheetKeepingPosition();
+  showToast("Cash-out removed.");
+});
+
 $("#patrolPointInputs").addEventListener("input", renderPatrolPointTotals);
 
 $("#chatForm").addEventListener("submit", async (event) => {
@@ -4390,30 +4704,6 @@ $("#calendarToday").addEventListener("click", () => {
   renderAttendanceCalendar();
 });
 
-$("#scheduleEventForm").addEventListener("submit", (event) => {
-  event.preventDefault();
-  const date = $("#scheduleEventDate").value;
-  const title = $("#scheduleEventTitle").value.trim();
-  if (!date || !title) return;
-  const scheduled = {
-    id: uid("scheduled"),
-    date,
-    title,
-    summary: $("#scheduleEventNotes").value.trim(),
-    source: "scheduled",
-    missingKidIds: [],
-  };
-  state.scheduledEvents = [...(state.scheduledEvents || []), scheduled];
-  selectedCalendarEventId = scheduled.id;
-  calendarCursor = startOfMonth(new Date(`${date}T12:00:00`));
-  saveState();
-  event.currentTarget.reset();
-  $("#scheduleEventDate").value = today();
-  renderAll();
-  setAttendanceView("calendar");
-  showToast("GG event scheduled.");
-});
-
 $("#eventEditForm").addEventListener("submit", (event) => {
   event.preventDefault();
   saveEventModal();
@@ -4429,6 +4719,21 @@ $("#closeSwitchTracker")?.addEventListener("click", closeSwitchTrackerModal);
 
 $("#switchTrackerModal")?.addEventListener("click", (event) => {
   if (event.target.id === "switchTrackerModal") closeSwitchTrackerModal();
+});
+
+$("#cancelRemoveKid")?.addEventListener("click", closeRemoveKidModal);
+$("#cancelRemoveKidTop")?.addEventListener("click", closeRemoveKidModal);
+$("#removeKidModal")?.addEventListener("click", (event) => {
+  if (event.target.id === "removeKidModal") closeRemoveKidModal();
+});
+$("#confirmRemoveKid")?.addEventListener("click", () => {
+  const kidId = $("#removeKidId").value;
+  if (!kidId) return closeRemoveKidModal();
+  removeKidAndConnectedData(kidId);
+  closeRemoveKidModal();
+  saveState();
+  renderAll();
+  showToast("Ember and connected information removed.");
 });
 
 $("#refreshSwitchTrackers")?.addEventListener("click", async () => {

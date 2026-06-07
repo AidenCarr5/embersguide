@@ -106,7 +106,7 @@
 
           <section class="surface">
             <div class="section-heading">
-              <h2>Roster</h2>
+              <h2>Attendance</h2>
               <div class="inline-actions">
                 <button class="quiet-button" id="markAllPresent" type="button">All present</button>
                 <button class="quiet-button" id="markAllAbsent" type="button">Clear</button>
@@ -214,6 +214,18 @@
           <div class="cookie-rates">
             <span>Boxes are $6 each. Cases are 12 boxes, or $72.</span>
           </div>
+          <form id="cookieOrderForm" class="cookie-order-form">
+            <label>
+              Cookie order
+              <input id="cookieOrderName" type="text" placeholder="Fall cookies, Winter cookies" required />
+            </label>
+            <label>
+              Unit order cost
+              <input id="cookieOrderTotal" type="number" min="0" step="1" placeholder="200" required />
+            </label>
+            <button class="quiet-button" type="submit">Add order</button>
+          </form>
+          <div id="cookieOrderProgress" class="cookie-order-progress"></div>
           <div class="cookie-summary-grid">
             <div>
               <span>Owed</span>
@@ -297,24 +309,6 @@
               <span class="small-note">Click an event to see who missed it.</span>
             </div>
             <div id="attendanceCalendar" class="calendar-month-grid"></div>
-            <form id="scheduleEventForm" class="schedule-form">
-              <h3>Schedule GG event</h3>
-              <div class="field-grid">
-                <label>
-                  Date
-                  <input id="scheduleEventDate" type="date" required />
-                </label>
-                <label>
-                  Event
-                  <input id="scheduleEventTitle" type="text" placeholder="Meeting, camp, ceremony" required />
-                </label>
-              </div>
-              <label>
-                Notes
-                <textarea id="scheduleEventNotes" rows="3" placeholder="Optional planning notes"></textarea>
-              </label>
-              <button class="primary-button" type="submit">Schedule event</button>
-            </form>
             <div id="calendarEventDetail" class="calendar-detail"></div>
           </section>
         </div>
@@ -370,7 +364,9 @@
                 Returning
                 <select id="kidReturningStatus">
                   <option value="">Choose status</option>
-                  <option value="returning">Returning</option>
+                  <option value="returningThirdYear">Returning 3rd year</option>
+                  <option value="newThirdYear">New 3rd year</option>
+                  <option value="returningSecondYear">Returning 2nd year</option>
                   <option value="newSecondYear">New 2nd year</option>
                   <option value="firstYear">1st year</option>
                 </select>
@@ -458,9 +454,29 @@
         <section class="surface">
           <div class="section-heading">
             <h2>Patrol Points</h2>
-            <span class="small-note">Edit Ember points by meeting; patrol totals update automatically.</span>
+            <span class="small-note">Edit earned points by meeting; Embers can cash out points while patrol totals stay earned.</span>
           </div>
+          <form id="patrolSpendForm" class="patrol-spend-form">
+            <label>
+              Ember
+              <select id="patrolSpendKid"></select>
+            </label>
+            <label>
+              Date
+              <input id="patrolSpendDate" type="date" />
+            </label>
+            <label>
+              Points cashed out
+              <input id="patrolSpendAmount" type="number" min="1" step="1" />
+            </label>
+            <label>
+              Note
+              <input id="patrolSpendNote" type="text" placeholder="Prize, reward, store item" />
+            </label>
+            <button class="quiet-button" type="submit">Cash out points</button>
+          </form>
           <div id="patrolPointsSheet" class="kid-badge-grid"></div>
+          <div id="patrolSpendHistory" class="stack-list"></div>
         </section>
       </section>
 
@@ -605,10 +621,28 @@
       </section>
     </div>
 
+    <div id="removeKidModal" class="modal-backdrop" hidden>
+      <section class="event-modal confirm-modal" role="dialog" aria-modal="true" aria-labelledby="removeKidTitle">
+        <header>
+          <div>
+            <p class="eyebrow">Roster removal</p>
+            <h2 id="removeKidTitle">Remove Ember?</h2>
+          </div>
+          <button class="text-button" id="cancelRemoveKidTop" type="button">Close</button>
+        </header>
+        <input id="removeKidId" type="hidden" />
+        <p id="removeKidMessage" class="muted">This will remove this Ember and their connected tracker information.</p>
+        <footer>
+          <button class="quiet-button" id="cancelRemoveKid" type="button">Cancel</button>
+          <button class="danger-button" id="confirmRemoveKid" type="button">Remove Ember</button>
+        </footer>
+      </section>
+    </div>
+
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script src="./excel-attendance-data.js?v=20260605-roster-cookies"></script>
-    <script src="./excel-progress-data.js?v=20260605-roster-cookies"></script>
-    <script src="./badge-knowledge.js?v=20260605-roster-cookies"></script>
-    <script src="./app.js?v=20260605-roster-cookies"></script>
+    <script src="./excel-attendance-data.js?v=20260607-roster-bank-cookies"></script>
+    <script src="./excel-progress-data.js?v=20260607-roster-bank-cookies"></script>
+    <script src="./badge-knowledge.js?v=20260607-roster-bank-cookies"></script>
+    <script src="./app.js?v=20260607-roster-bank-cookies"></script>
   </body>
 </html>
