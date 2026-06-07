@@ -1301,6 +1301,7 @@ function switchTab(tabId) {
   });
   if (tabId === "kid-badges") renderKidBadgeModeControls();
   if (tabId === "attendance") setAttendanceView(attendanceView);
+  if (tabId === "patrol-points") renderPatrolPointsMode();
   if (tabId === "log") queueMeetingBadgePanelSync();
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
@@ -3713,10 +3714,20 @@ function renderPatrolSpendHistory() {
 }
 
 function renderPatrolPointsMode() {
+  const earnedPanel = $("#patrolPointsEarnedPanel");
+  const cashoutPanel = $("#patrolPointsCashoutPanel");
+  const earnedActive = patrolPointsMode === "earned";
+  const cashoutActive = patrolPointsMode === "cashout";
   $("#patrolPointsEarnedToggle")?.classList.toggle("is-active", patrolPointsMode === "earned");
   $("#patrolPointsCashoutToggle")?.classList.toggle("is-active", patrolPointsMode === "cashout");
-  $("#patrolPointsEarnedPanel")?.classList.toggle("hidden", patrolPointsMode !== "earned");
-  $("#patrolPointsCashoutPanel")?.classList.toggle("hidden", patrolPointsMode !== "cashout");
+  if (earnedPanel) {
+    earnedPanel.hidden = !earnedActive;
+    earnedPanel.classList.toggle("hidden", !earnedActive);
+  }
+  if (cashoutPanel) {
+    cashoutPanel.hidden = !cashoutActive;
+    cashoutPanel.classList.toggle("hidden", !cashoutActive);
+  }
 }
 
 function renderPatrolPointsSheet() {
