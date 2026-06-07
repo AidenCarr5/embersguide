@@ -216,17 +216,6 @@
             <div class="cookie-rates">
               <span>Boxes are $6 each. Cases are 12 boxes, or $72.</span>
             </div>
-            <form id="cookieOrderForm" class="cookie-order-form">
-              <label>
-                Cookie order
-                <input id="cookieOrderName" type="text" placeholder="Fall cookies, Winter cookies" required />
-              </label>
-              <label>
-                Unit order cost
-                <input id="cookieOrderTotal" type="number" min="0" step="1" placeholder="200" required />
-              </label>
-              <button class="quiet-button" type="submit">Add order</button>
-            </form>
             <div id="cookieOrderProgress" class="cookie-order-progress"></div>
             <div class="cookie-summary-grid">
               <div>
@@ -246,6 +235,17 @@
                 <strong><span id="cookieTotalCases">0</span> cases + <span id="cookieTotalBoxes">0</span> boxes</strong>
               </div>
             </div>
+            <form id="cookieOrderForm" class="cookie-order-form">
+              <label>
+                Cookie order
+                <input id="cookieOrderName" type="text" placeholder="Fall cookies, Winter cookies" required />
+              </label>
+              <label>
+                Unit order cost
+                <input id="cookieOrderTotal" type="number" min="0" step="1" placeholder="200" required />
+              </label>
+              <button class="quiet-button" type="submit">Add order</button>
+            </form>
           </div>
           <div id="cookieRows" class="cookie-ledger"></div>
           <div class="cookie-help small-note">

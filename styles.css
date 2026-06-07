@@ -42,6 +42,10 @@ button {
   cursor: pointer;
 }
 
+.hidden {
+  display: none !important;
+}
+
 .app-header {
   display: flex;
   align-items: center;
