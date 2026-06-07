@@ -651,6 +651,26 @@
       </section>
     </div>
 
+    <div id="removeCookieModal" class="modal-backdrop" hidden>
+      <section class="event-modal confirm-modal" role="dialog" aria-modal="true" aria-labelledby="removeCookieTitle">
+        <header>
+          <div>
+            <p class="eyebrow">Cookie tracker</p>
+            <h2 id="removeCookieTitle">Remove item?</h2>
+          </div>
+          <button class="text-button" id="cancelRemoveCookieTop" type="button">Close</button>
+        </header>
+        <input id="removeCookieType" type="hidden" />
+        <input id="removeCookieKidId" type="hidden" />
+        <input id="removeCookieItemId" type="hidden" />
+        <p id="removeCookieMessage" class="muted">This will remove this cookie tracker item.</p>
+        <footer>
+          <button class="quiet-button" id="cancelRemoveCookie" type="button">Cancel</button>
+          <button class="danger-button" id="confirmRemoveCookie" type="button">Remove</button>
+        </footer>
+      </section>
+    </div>
+
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <script src="./excel-attendance-data.js?v=20260607-cookie-summary-only"></script>
     <script src="./excel-progress-data.js?v=20260607-cookie-summary-only"></script>

@@ -2988,6 +2988,69 @@ function renderCookieSummaryView() {
   `;
 }
 
+function cookieRemovalDetails(type, kidId = "", itemId = "") {
+  if (type === "pickup") {
+    const kid = state.kids.find((item) => item.id === kidId);
+    return {
+      title: "Remove cookie pickup?",
+      message: `This will remove this pickup row${kid ? ` for ${kid.name}` : ""} and update the owed totals.`,
+    };
+  }
+  if (type === "payment") {
+    const kid = state.kids.find((item) => item.id === kidId);
+    return {
+      title: "Remove cookie payment?",
+      message: `This will remove this payment row${kid ? ` for ${kid.name}` : ""} and update the paid/outstanding totals.`,
+    };
+  }
+  const order = cookieOrders().find((item) => item.id === itemId);
+  return {
+    title: "Remove cookie order?",
+    message: `This will remove ${order?.name || "this cookie order"} from Progress and clear that order selection from existing pickup/payment rows.`,
+  };
+}
+
+function openCookieRemoveModal(type, kidId = "", itemId = "") {
+  const details = cookieRemovalDetails(type, kidId, itemId);
+  $("#removeCookieType").value = type;
+  $("#removeCookieKidId").value = kidId;
+  $("#removeCookieItemId").value = itemId;
+  $("#removeCookieTitle").textContent = details.title;
+  $("#removeCookieMessage").textContent = details.message;
+  $("#removeCookieModal").hidden = false;
+}
+
+function closeCookieRemoveModal() {
+  $("#removeCookieType").value = "";
+  $("#removeCookieKidId").value = "";
+  $("#removeCookieItemId").value = "";
+  $("#removeCookieModal").hidden = true;
+}
+
+function removeCookieItem(type, kidId, itemId) {
+  if (type === "pickup") {
+    const row = cookieRowForKid(kidId);
+    row.pickups = row.pickups.filter((pickup) => pickup.id !== itemId);
+    return "Cookie pickup removed.";
+  }
+  if (type === "payment") {
+    const row = cookieRowForKid(kidId);
+    row.payments = row.payments.filter((payment) => payment.id !== itemId);
+    return "Cookie payment removed.";
+  }
+  state.cookieTracker.orders = cookieOrders().filter((order) => order.id !== itemId);
+  state.kids.forEach((kid) => {
+    const row = cookieRowForKid(kid.id);
+    (row.pickups || []).forEach((pickup) => {
+      if (pickup.orderId === itemId) pickup.orderId = "";
+    });
+    (row.payments || []).forEach((payment) => {
+      if (payment.orderId === itemId) payment.orderId = "";
+    });
+  });
+  return "Cookie order removed.";
+}
+
 function handleCookieTrackerInput(event) {
   const pickupInput = event.target.closest("[data-cookie-kid-id][data-cookie-pickup-id][data-cookie-pickup-field]");
   if (pickupInput) {
@@ -4446,10 +4509,7 @@ $("#cookieRows").addEventListener("click", (event) => {
 
   const removePickup = event.target.closest("[data-cookie-remove-pickup][data-cookie-kid-id]");
   if (removePickup) {
-    const row = cookieRowForKid(removePickup.dataset.cookieKidId);
-    row.pickups = row.pickups.filter((pickup) => pickup.id !== removePickup.dataset.cookieRemovePickup);
-    saveState();
-    renderCookieTracker();
+    openCookieRemoveModal("pickup", removePickup.dataset.cookieKidId, removePickup.dataset.cookieRemovePickup);
     return;
   }
 
@@ -4464,10 +4524,7 @@ $("#cookieRows").addEventListener("click", (event) => {
 
   const removePayment = event.target.closest("[data-cookie-remove-payment][data-cookie-kid-id]");
   if (removePayment) {
-    const row = cookieRowForKid(removePayment.dataset.cookieKidId);
-    row.payments = row.payments.filter((payment) => payment.id !== removePayment.dataset.cookieRemovePayment);
-    saveState();
-    renderCookieTracker();
+    openCookieRemoveModal("payment", removePayment.dataset.cookieKidId, removePayment.dataset.cookieRemovePayment);
   }
 });
 
@@ -4494,20 +4551,7 @@ $("#cookieOrderForm")?.addEventListener("submit", (event) => {
 $("#cookieOrderProgress")?.addEventListener("click", (event) => {
   const remove = event.target.closest("[data-remove-cookie-order]");
   if (!remove) return;
-  const orderId = remove.dataset.removeCookieOrder;
-  state.cookieTracker.orders = cookieOrders().filter((order) => order.id !== orderId);
-  state.kids.forEach((kid) => {
-    const row = cookieRowForKid(kid.id);
-    (row.pickups || []).forEach((pickup) => {
-      if (pickup.orderId === orderId) pickup.orderId = "";
-    });
-    (row.payments || []).forEach((payment) => {
-      if (payment.orderId === orderId) payment.orderId = "";
-    });
-  });
-  saveState();
-  renderCookieTracker();
-  showToast("Cookie order removed.");
+  openCookieRemoveModal("order", "", remove.dataset.removeCookieOrder);
 });
 
 $("#cookieEntryMode").addEventListener("click", () => {
@@ -4780,6 +4824,23 @@ $("#confirmRemoveKid")?.addEventListener("click", () => {
   saveState();
   renderAll();
   showToast("Ember and connected information removed.");
+});
+
+$("#cancelRemoveCookie")?.addEventListener("click", closeCookieRemoveModal);
+$("#cancelRemoveCookieTop")?.addEventListener("click", closeCookieRemoveModal);
+$("#removeCookieModal")?.addEventListener("click", (event) => {
+  if (event.target.id === "removeCookieModal") closeCookieRemoveModal();
+});
+$("#confirmRemoveCookie")?.addEventListener("click", () => {
+  const type = $("#removeCookieType").value;
+  const kidId = $("#removeCookieKidId").value;
+  const itemId = $("#removeCookieItemId").value;
+  if (!type || !itemId) return closeCookieRemoveModal();
+  const message = removeCookieItem(type, kidId, itemId);
+  closeCookieRemoveModal();
+  saveState();
+  renderCookieTracker();
+  showToast(message);
 });
 
 $("#refreshSwitchTrackers")?.addEventListener("click", async () => {
