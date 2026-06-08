@@ -7,6 +7,7 @@ const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 const DEFAULT_GOOGLE_CLIENT_ID = "428700740931-sos1bugq8r2f4eaqli22tkeind062sm3.apps.googleusercontent.com";
 const DEFAULT_GOOGLE_APP_ID = "428700740931";
 const DEFAULT_GOOGLE_API_KEY = "AIzaSyBC9TQs0YQX_VDzNrQr2inJntsE5h-QUlU";
+const DEFAULT_APPS_SCRIPT_ENDPOINT = "";
 
 let driveTokenClient = null;
 let driveAccessToken = "";
@@ -17,6 +18,9 @@ let driveSyncInFlight = false;
 let driveSyncHydrated = false;
 let driveTrackerFiles = [];
 let googlePickerReady = false;
+let appScriptSyncInFlight = false;
+let appScriptAutoPushTimer = null;
+let suppressAppScriptAutoPush = false;
 
 const slug = (text) =>
   String(text)
@@ -150,6 +154,7 @@ function buildEmptyData() {
       rosterChecked: false,
       badgeProgressResetDone: false,
       driveSync: { clientId: "", apiKey: "", appId: "", folderId: "", folderName: DRIVE_SYNC_FOLDER_NAME, fileId: "", fileName: DRIVE_SYNC_FILE_NAME, autoPull: true, autoPush: true, remoteModifiedTime: "", lastPulledAt: "", lastPushedAt: "", webViewLink: "" },
+      appScriptSync: { endpoint: DEFAULT_APPS_SCRIPT_ENDPOINT, trackerCode: "", trackerName: "", pin: "", autoPush: true, lastPulledAt: "", lastPushedAt: "", remoteUpdatedAt: "" },
     },
     createdAt: new Date().toISOString(),
   };
@@ -579,6 +584,7 @@ function normalizeState(value) {
       ...fallback.settings,
       ...(value.settings || {}),
       driveSync: { ...fallback.settings.driveSync, ...((value.settings || {}).driveSync || {}) },
+      appScriptSync: { ...fallback.settings.appScriptSync, ...((value.settings || {}).appScriptSync || {}) },
     },
     createdAt: value.createdAt || new Date().toISOString(),
   };
@@ -684,6 +690,7 @@ function saveState() {
   state.updatedAt = new Date().toISOString();
   localStorage.setItem(STORE_KEY, JSON.stringify(state));
   scheduleDriveAutoPush();
+  scheduleAppScriptAutoPush();
 }
 
 const $ = (selector) => document.querySelector(selector);
@@ -731,6 +738,180 @@ function setDriveSyncStatus(message, stateLabel = "") {
   if (status) status.textContent = message;
   if (loginStatus) loginStatus.textContent = message;
   if (badge) badge.textContent = stateLabel || (driveAccessToken ? "Connected" : "Not connected");
+}
+
+function appScriptSyncSettings() {
+  state.settings = state.settings || {};
+  state.settings.appScriptSync = {
+    endpoint: DEFAULT_APPS_SCRIPT_ENDPOINT,
+    trackerCode: "",
+    trackerName: "",
+    pin: "",
+    autoPush: true,
+    lastPulledAt: "",
+    lastPushedAt: "",
+    remoteUpdatedAt: "",
+    ...(state.settings.appScriptSync || {}),
+  };
+  return state.settings.appScriptSync;
+}
+
+function setAppScriptSyncStatus(message, stateLabel = "") {
+  const status = $("#appScriptSyncStatus");
+  const badge = $("#appScriptSyncState");
+  const loginStatus = $("#loginCodeStatus");
+  if (status) status.textContent = message;
+  if (loginStatus) loginStatus.textContent = message;
+  if (badge) badge.textContent = stateLabel || (appScriptSyncSettings().trackerCode ? "Code linked" : "Not connected");
+}
+
+function saveAppScriptSyncSettingsFromForm(source = "data") {
+  const sync = appScriptSyncSettings();
+  const endpointInput = source === "login" ? $("#loginCodeEndpoint") : $("#appScriptEndpoint");
+  const codeInput = source === "login" ? $("#loginTrackerCode") : $("#appScriptTrackerCode");
+  const pinInput = source === "login" ? $("#loginTrackerPin") : $("#appScriptPin");
+  const nameInput = source === "login" ? $("#loginTrackerName") : $("#appScriptTrackerName");
+  if (endpointInput) sync.endpoint = endpointInput.value.trim();
+  if (codeInput) sync.trackerCode = codeInput.value.trim().toUpperCase();
+  if (pinInput) sync.pin = pinInput.value.trim();
+  if (nameInput) sync.trackerName = nameInput.value.trim();
+  if ($("#appScriptAutoPush")) sync.autoPush = $("#appScriptAutoPush").checked;
+  suppressAppScriptAutoPush = true;
+  saveState();
+  suppressAppScriptAutoPush = false;
+  renderAppScriptSyncSettings();
+}
+
+function renderAppScriptSyncSettings() {
+  const sync = appScriptSyncSettings();
+  const endpoint = $("#appScriptEndpoint");
+  if (endpoint) endpoint.value = sync.endpoint || "";
+  const code = $("#appScriptTrackerCode");
+  if (code) code.value = sync.trackerCode || "";
+  const pin = $("#appScriptPin");
+  if (pin) pin.value = sync.pin || "";
+  const name = $("#appScriptTrackerName");
+  if (name) name.value = sync.trackerName || "";
+  if ($("#appScriptAutoPush")) $("#appScriptAutoPush").checked = sync.autoPush !== false;
+  if ($("#loginCodeEndpoint")) $("#loginCodeEndpoint").value = sync.endpoint || "";
+  if ($("#loginTrackerCode")) $("#loginTrackerCode").value = sync.trackerCode || "";
+  if ($("#loginTrackerPin")) $("#loginTrackerPin").value = sync.pin || "";
+  if ($("#loginTrackerName")) $("#loginTrackerName").value = sync.trackerName || "";
+  const pieces = [];
+  if (sync.trackerCode) pieces.push(`Tracker code: ${sync.trackerCode}`);
+  if (sync.autoPush && sync.trackerCode) pieces.push("Auto-push on");
+  if (sync.lastPulledAt) pieces.push(`Last pull: ${formatDateTime(sync.lastPulledAt)}`);
+  if (sync.lastPushedAt) pieces.push(`Last push: ${formatDateTime(sync.lastPushedAt)}`);
+  setAppScriptSyncStatus(pieces.join(" | ") || "Use a tracker code to sync without Google sign-in.");
+}
+
+async function appScriptRequest(action, extra = {}) {
+  const sync = appScriptSyncSettings();
+  const endpoint = String(extra.endpoint || sync.endpoint || "").trim();
+  if (!endpoint) throw new Error("Add the Apps Script web app URL first.");
+  const response = await fetch("/api/apps-script-sync", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      endpoint,
+      action,
+      code: extra.code ?? sync.trackerCode,
+      pin: extra.pin ?? sync.pin,
+      name: extra.name ?? sync.trackerName,
+      payload: extra.payload,
+      clientUpdatedAt: state.updatedAt || "",
+    }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.ok === false) throw new Error(data.error || `Sync request failed with status ${response.status}.`);
+  return data;
+}
+
+function rememberAppScriptTracker(data, source = "data") {
+  const sync = appScriptSyncSettings();
+  sync.endpoint = source === "login" ? $("#loginCodeEndpoint")?.value.trim() || sync.endpoint : $("#appScriptEndpoint")?.value.trim() || sync.endpoint;
+  sync.trackerCode = String(data.code || sync.trackerCode || "").trim().toUpperCase();
+  sync.trackerName = String(data.name || sync.trackerName || "").trim();
+  sync.remoteUpdatedAt = data.updatedAt || sync.remoteUpdatedAt || "";
+  sync.autoPush = true;
+}
+
+async function createAppScriptTracker(source = "data") {
+  saveAppScriptSyncSettingsFromForm(source);
+  const sync = appScriptSyncSettings();
+  if (!sync.pin) throw new Error("Add a tracker PIN first.");
+  const data = await appScriptRequest("create", {
+    name: sync.trackerName || unitTrackerDisplayName(),
+    code: sync.trackerCode,
+    pin: sync.pin,
+    payload: trackerPayloadObject(),
+  });
+  rememberAppScriptTracker(data, source);
+  sync.lastPushedAt = new Date().toISOString();
+  suppressAppScriptAutoPush = true;
+  saveState();
+  suppressAppScriptAutoPush = false;
+  renderAppScriptSyncSettings();
+  return data;
+}
+
+async function pullAppScriptTracker(source = "data") {
+  saveAppScriptSyncSettingsFromForm(source);
+  const sync = { ...appScriptSyncSettings() };
+  if (!sync.trackerCode || !sync.pin) throw new Error("Add the tracker code and PIN first.");
+  setAppScriptSyncStatus("Pulling latest tracker by code...", "Working");
+  const data = await appScriptRequest("pull", { code: sync.trackerCode, pin: sync.pin });
+  state = normalizeState(data.payload);
+  state.settings.appScriptSync = {
+    ...(state.settings.appScriptSync || {}),
+    endpoint: sync.endpoint,
+    trackerCode: data.code || sync.trackerCode,
+    trackerName: data.name || sync.trackerName,
+    pin: sync.pin,
+    autoPush: true,
+    lastPulledAt: new Date().toISOString(),
+    remoteUpdatedAt: data.updatedAt || "",
+  };
+  suppressAppScriptAutoPush = true;
+  saveState();
+  suppressAppScriptAutoPush = false;
+  renderAll();
+  setAppScriptSyncStatus("Latest tracker loaded by code.", "Connected");
+}
+
+async function pushAppScriptTracker(options = {}) {
+  const sync = appScriptSyncSettings();
+  if (!sync.trackerCode || !sync.pin || !sync.endpoint) throw new Error("Add the tracker code, PIN, and Apps Script URL first.");
+  appScriptSyncInFlight = true;
+  try {
+    setAppScriptSyncStatus("Pushing tracker by code...", "Working");
+    const data = await appScriptRequest("push", {
+      code: sync.trackerCode,
+      pin: sync.pin,
+      payload: trackerPayloadObject(),
+    });
+    sync.trackerCode = data.code || sync.trackerCode;
+    sync.trackerName = data.name || sync.trackerName;
+    sync.remoteUpdatedAt = data.updatedAt || sync.remoteUpdatedAt || "";
+    sync.lastPushedAt = new Date().toISOString();
+    suppressAppScriptAutoPush = true;
+    saveState();
+    suppressAppScriptAutoPush = false;
+    renderAppScriptSyncSettings();
+    if (!options.auto) showToast("Tracker code sync pushed.");
+  } finally {
+    appScriptSyncInFlight = false;
+  }
+}
+
+function scheduleAppScriptAutoPush() {
+  if (suppressAppScriptAutoPush || appScriptSyncInFlight) return;
+  const sync = appScriptSyncSettings();
+  if (sync.autoPush === false || !sync.endpoint || !sync.trackerCode || !sync.pin) return;
+  clearTimeout(appScriptAutoPushTimer);
+  appScriptAutoPushTimer = setTimeout(() => {
+    pushAppScriptTracker({ auto: true }).catch((error) => setAppScriptSyncStatus(`Code sync skipped: ${error.message}`, "Needs review"));
+  }, 1800);
 }
 
 function unitTrackerDisplayName() {
@@ -4032,6 +4213,7 @@ function renderAll() {
   renderChatBadgeNeeds();
   renderHistory();
   renderDriveSyncSettings();
+  renderAppScriptSyncSettings();
   queueMeetingBadgePanelSync();
 }
 
@@ -5159,6 +5341,29 @@ $("#loginDriveLoad").addEventListener("click", async () => {
   }
 });
 
+$("#loginCodeOpen")?.addEventListener("click", async () => {
+  try {
+    await pullAppScriptTracker("login");
+    switchTab("planning");
+    showToast("Tracker opened by code.");
+  } catch (error) {
+    setAppScriptSyncStatus(`Could not open tracker code: ${error.message}`, "Needs setup");
+    showToast("Could not open tracker code.");
+  }
+});
+
+$("#loginCodeCreate")?.addEventListener("click", async () => {
+  try {
+    const created = await createAppScriptTracker("login");
+    await pullAppScriptTracker("login");
+    switchTab("planning");
+    showToast(`Tracker code created: ${created.code}`);
+  } catch (error) {
+    setAppScriptSyncStatus(`Could not create tracker code: ${error.message}`, "Needs setup");
+    showToast("Could not create tracker code.");
+  }
+});
+
 $("#loginDriveChooser").addEventListener("click", async (event) => {
   const fileButton = event.target.closest("[data-login-drive-file]");
   if (fileButton) {
@@ -5191,6 +5396,36 @@ $("#loginDriveChooser").addEventListener("click", async (event) => {
   } catch (error) {
     setDriveSyncStatus(`Could not create shared file: ${error.message}`, "Needs setup");
     showToast("Could not create shared file.");
+  }
+});
+
+$("#appScriptCreateTracker")?.addEventListener("click", async () => {
+  try {
+    const created = await createAppScriptTracker("data");
+    showToast(`Tracker code created: ${created.code}`);
+  } catch (error) {
+    setAppScriptSyncStatus(`Create failed: ${error.message}`, "Needs setup");
+    showToast("Could not create tracker code.");
+  }
+});
+
+$("#appScriptPullTracker")?.addEventListener("click", async () => {
+  try {
+    await pullAppScriptTracker("data");
+    showToast("Tracker code pulled.");
+  } catch (error) {
+    setAppScriptSyncStatus(`Pull failed: ${error.message}`, "Needs setup");
+    showToast("Could not pull tracker code.");
+  }
+});
+
+$("#appScriptPushTracker")?.addEventListener("click", async () => {
+  try {
+    saveAppScriptSyncSettingsFromForm("data");
+    await pushAppScriptTracker();
+  } catch (error) {
+    setAppScriptSyncStatus(`Push failed: ${error.message}`, "Needs setup");
+    showToast("Could not push tracker code.");
   }
 });
 

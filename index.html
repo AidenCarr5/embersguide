@@ -7,7 +7,7 @@
     <title>Embers Tracker</title>
     <link rel="icon" type="image/png" href="./assets/girl-guides-trefoil-icon.png" />
     <link rel="apple-touch-icon" href="./assets/girl-guides-trefoil-icon-1024.png" />
-    <link rel="stylesheet" href="./styles.css?v=20260608-drive-file-picker" />
+    <link rel="stylesheet" href="./styles.css?v=20260608-code-sync" />
     <script src="https://apis.google.com/js/api.js" async defer></script>
     <script src="https://accounts.google.com/gsi/client" async defer></script>
   </head>
@@ -44,13 +44,39 @@
           <div class="brand-lockup login-brand">
             <img class="guides-logo-img" src="./assets/girl-guides-logo.png" alt="Girl Guides" />
             <div>
-              <p class="eyebrow">Google Drive sync</p>
+              <p class="eyebrow">Unit tracker sync</p>
               <h1 id="loginAppTitle">Embers Tracker</h1>
             </div>
           </div>
           <div class="login-copy">
-            <h2>Sign in to load the latest tracker</h2>
-            <p class="muted">Connect with Google and choose the unit tracker from Drive.</p>
+            <h2>Open the latest tracker</h2>
+            <p class="muted">Use a tracker code, Google Drive, or open offline.</p>
+          </div>
+          <div class="drive-file-list">
+            <h3>Open with tracker code</h3>
+            <div class="drive-sync-grid">
+              <label>
+                Sync web app URL
+                <input id="loginCodeEndpoint" type="url" placeholder="Paste the Apps Script web app URL" />
+              </label>
+              <label>
+                Tracker code
+                <input id="loginTrackerCode" type="text" placeholder="46TH-WINDSOR-EMBER" />
+              </label>
+              <label>
+                PIN
+                <input id="loginTrackerPin" type="password" placeholder="Shared PIN" />
+              </label>
+              <label>
+                New tracker name
+                <input id="loginTrackerName" type="text" placeholder="46th Windsor Embers" />
+              </label>
+            </div>
+            <div class="data-actions">
+              <button class="primary-button" id="loginCodeOpen" type="button">Open tracker code</button>
+              <button class="quiet-button" id="loginCodeCreate" type="button">Create tracker code</button>
+            </div>
+            <p class="muted" id="loginCodeStatus">Use a tracker code to sync without Google sign-in.</p>
           </div>
           <div class="data-actions">
             <button class="primary-button" id="loginDriveLoad" type="button">Sign in with Google</button>
@@ -528,6 +554,46 @@
         <section class="surface">
           <div class="section-heading">
             <div>
+              <h2>Tracker code sync</h2>
+              <span class="small-note">No Google sign-in for leaders. Share the tracker code and PIN with the people who should edit this unit.</span>
+            </div>
+            <span class="status-pill" id="appScriptSyncState">Not connected</span>
+          </div>
+          <div class="drive-sync-grid">
+            <label>
+              Sync web app URL
+              <input id="appScriptEndpoint" type="url" placeholder="Google Apps Script web app URL" />
+            </label>
+            <label>
+              Tracker code
+              <input id="appScriptTrackerCode" type="text" placeholder="Leave blank to create one" />
+            </label>
+            <label>
+              PIN
+              <input id="appScriptPin" type="password" placeholder="Shared edit PIN" />
+            </label>
+            <label>
+              Tracker name
+              <input id="appScriptTrackerName" type="text" placeholder="46th Windsor Embers" />
+            </label>
+          </div>
+          <div class="drive-sync-options">
+            <label class="check-row">
+              <input id="appScriptAutoPush" type="checkbox" />
+              Auto-push changes to this tracker code
+            </label>
+          </div>
+          <div class="data-actions">
+            <button class="quiet-button" id="appScriptCreateTracker" type="button">Create tracker code</button>
+            <button class="quiet-button" id="appScriptPullTracker" type="button">Pull by code</button>
+            <button class="quiet-button" id="appScriptPushTracker" type="button">Push by code</button>
+          </div>
+          <p class="muted" id="appScriptSyncStatus">Use a tracker code to sync without Google sign-in.</p>
+        </section>
+
+        <section class="surface">
+          <div class="section-heading">
+            <div>
               <h2>Unit trackers</h2>
               <span class="small-note">Choose a unit tracker, or create a new unit tracker JSON inside the Embers Tracker Files folder. Shared leaders need editor access to the unit tracker or folder.</span>
             </div>
@@ -682,9 +748,9 @@
     </div>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script src="./excel-attendance-data.js?v=20260608-drive-file-picker"></script>
-    <script src="./excel-progress-data.js?v=20260608-drive-file-picker"></script>
-    <script src="./badge-knowledge.js?v=20260608-drive-file-picker"></script>
-    <script src="./app.js?v=20260608-drive-file-picker"></script>
+    <script src="./excel-attendance-data.js?v=20260608-code-sync"></script>
+    <script src="./excel-progress-data.js?v=20260608-code-sync"></script>
+    <script src="./badge-knowledge.js?v=20260608-code-sync"></script>
+    <script src="./app.js?v=20260608-code-sync"></script>
   </body>
 </html>

@@ -30,7 +30,7 @@ function readJson(request) {
     let body = "";
     request.on("data", (chunk) => {
       body += chunk;
-      if (body.length > 1_000_000) {
+      if (body.length > 10_000_000) {
         request.destroy();
         reject(new Error("Request body too large."));
       }
@@ -132,6 +132,35 @@ async function handleChat(request, response) {
   sendJson(response, 200, { answer, provider: AI_PROVIDER, model: AI_PROVIDER === "openai" ? OPENAI_MODEL : OLLAMA_MODEL });
 }
 
+async function handleAppsScriptSync(request, response) {
+  const body = await readJson(request);
+  const endpoint = String(body.endpoint || "").trim();
+  if (!/^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec(?:\?.*)?$/.test(endpoint)) {
+    sendJson(response, 400, { ok: false, error: "Add a valid Google Apps Script web app URL." });
+    return;
+  }
+  const scriptResponse = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify({
+      action: body.action,
+      code: body.code,
+      pin: body.pin,
+      name: body.name,
+      payload: body.payload,
+      clientUpdatedAt: body.clientUpdatedAt,
+    }),
+  });
+  const text = await scriptResponse.text();
+  let data = {};
+  try {
+    data = JSON.parse(text || "{}");
+  } catch {
+    data = { ok: false, error: text || "Google Apps Script returned an invalid response." };
+  }
+  sendJson(response, scriptResponse.ok ? 200 : scriptResponse.status, data);
+}
+
 function serveStatic(request, response) {
   const url = new URL(request.url, `http://${request.headers.host || "localhost"}`);
   const pathname = decodeURIComponent(url.pathname);
@@ -159,6 +188,10 @@ const server = http.createServer(async (request, response) => {
   try {
     if (request.method === "POST" && request.url === "/api/chat") {
       await handleChat(request, response);
+      return;
+    }
+    if (request.method === "POST" && request.url === "/api/apps-script-sync") {
+      await handleAppsScriptSync(request, response);
       return;
     }
     if (request.method === "GET" || request.method === "HEAD") {
