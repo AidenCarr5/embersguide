@@ -6,7 +6,7 @@ const DRIVE_SYNC_FOLDER_NAME = "Embers Tracker Files";
 const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 const DEFAULT_GOOGLE_CLIENT_ID = "428700740931-sos1bugq8r2f4eaqli22tkeind062sm3.apps.googleusercontent.com";
 const DEFAULT_GOOGLE_APP_ID = "428700740931";
-const DEFAULT_GOOGLE_API_KEY = "";
+const DEFAULT_GOOGLE_API_KEY = "AIzaSyBC9TQs0YQX_VDzNrQr2inJntsE5h-QUlU";
 
 let driveTokenClient = null;
 let driveAccessToken = "";
