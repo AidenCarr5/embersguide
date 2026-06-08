@@ -7,7 +7,7 @@ const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 const DEFAULT_GOOGLE_CLIENT_ID = "428700740931-sos1bugq8r2f4eaqli22tkeind062sm3.apps.googleusercontent.com";
 const DEFAULT_GOOGLE_APP_ID = "428700740931";
 const DEFAULT_GOOGLE_API_KEY = "AIzaSyBC9TQs0YQX_VDzNrQr2inJntsE5h-QUlU";
-const DEFAULT_APPS_SCRIPT_ENDPOINT = "";
+const DEFAULT_APPS_SCRIPT_ENDPOINT = "https://script.google.com/macros/s/AKfycbxCe2I-9wSIiWY1Zb0SbcpYVnrJu_hAw3dL4TlyOzxPaFqfPLSqcSdjQDHU9THZDaIXHg/exec";
 
 let driveTokenClient = null;
 let driveAccessToken = "";
@@ -775,7 +775,7 @@ function saveAppScriptSyncSettingsFromForm(source = "data") {
   const codeInput = source === "login" ? $("#loginTrackerCode") : $("#appScriptTrackerCode");
   const pinInput = source === "login" ? $("#loginTrackerPin") : $("#appScriptPin");
   const nameInput = source === "login" ? $("#loginTrackerName") : $("#appScriptTrackerName");
-  if (endpointInput) sync.endpoint = endpointInput.value.trim();
+  if (endpointInput) sync.endpoint = endpointInput.value.trim() || DEFAULT_APPS_SCRIPT_ENDPOINT;
   if (codeInput) sync.trackerCode = codeInput.value.trim().toUpperCase();
   if (pinInput) sync.pin = pinInput.value.trim();
   if (nameInput) sync.trackerName = nameInput.value.trim();
@@ -811,7 +811,7 @@ function renderAppScriptSyncSettings() {
 
 async function appScriptRequest(action, extra = {}) {
   const sync = appScriptSyncSettings();
-  const endpoint = String(extra.endpoint || sync.endpoint || "").trim();
+  const endpoint = String(extra.endpoint || sync.endpoint || DEFAULT_APPS_SCRIPT_ENDPOINT).trim();
   if (!endpoint) throw new Error("Add the Apps Script web app URL first.");
   const response = await fetch("/api/apps-script-sync", {
     method: "POST",
@@ -834,7 +834,9 @@ async function appScriptRequest(action, extra = {}) {
 
 function rememberAppScriptTracker(data, source = "data") {
   const sync = appScriptSyncSettings();
-  sync.endpoint = source === "login" ? $("#loginCodeEndpoint")?.value.trim() || sync.endpoint : $("#appScriptEndpoint")?.value.trim() || sync.endpoint;
+  sync.endpoint = source === "login"
+    ? $("#loginCodeEndpoint")?.value.trim() || sync.endpoint || DEFAULT_APPS_SCRIPT_ENDPOINT
+    : $("#appScriptEndpoint")?.value.trim() || sync.endpoint || DEFAULT_APPS_SCRIPT_ENDPOINT;
   sync.trackerCode = String(data.code || sync.trackerCode || "").trim().toUpperCase();
   sync.trackerName = String(data.name || sync.trackerName || "").trim();
   sync.remoteUpdatedAt = data.updatedAt || sync.remoteUpdatedAt || "";
