@@ -7,7 +7,8 @@
     <title>Embers Tracker</title>
     <link rel="icon" type="image/png" href="./assets/girl-guides-trefoil-icon.png" />
     <link rel="apple-touch-icon" href="./assets/girl-guides-trefoil-icon-1024.png" />
-    <link rel="stylesheet" href="./styles.css?v=20260607-cookie-summary-only" />
+    <link rel="stylesheet" href="./styles.css?v=20260608-drive-file-picker" />
+    <script src="https://apis.google.com/js/api.js" async defer></script>
     <script src="https://accounts.google.com/gsi/client" async defer></script>
   </head>
   <body class="login-mode">
@@ -538,6 +539,14 @@
               <input id="driveClientId" type="text" />
             </label>
             <label>
+              Google Picker API key
+              <input id="driveApiKey" type="text" placeholder="Needed to open shared trackers" />
+            </label>
+            <label>
+              Google project number
+              <input id="driveAppId" type="text" placeholder="Usually the first number in the Client ID" />
+            </label>
+            <label>
               Unit tracker
               <select id="driveFileSelect"></select>
             </label>
@@ -559,6 +568,7 @@
           </div>
           <div class="data-actions">
             <button class="quiet-button" id="driveRefreshFiles" type="button">Refresh unit trackers</button>
+            <button class="quiet-button" id="driveOpenPicker" type="button">Open tracker from Drive</button>
             <button class="quiet-button" id="driveCreateNamedFile" type="button">Create named tracker</button>
             <button class="quiet-button" id="drivePullFile" type="button">Pull selected</button>
             <button class="quiet-button" id="drivePushFile" type="button">Push current data</button>
@@ -672,9 +682,9 @@
     </div>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script src="./excel-attendance-data.js?v=20260607-cookie-summary-only"></script>
-    <script src="./excel-progress-data.js?v=20260607-cookie-summary-only"></script>
-    <script src="./badge-knowledge.js?v=20260607-cookie-summary-only"></script>
-    <script src="./app.js?v=20260607-cookie-summary-only"></script>
+    <script src="./excel-attendance-data.js?v=20260608-drive-file-picker"></script>
+    <script src="./excel-progress-data.js?v=20260608-drive-file-picker"></script>
+    <script src="./badge-knowledge.js?v=20260608-drive-file-picker"></script>
+    <script src="./app.js?v=20260608-drive-file-picker"></script>
   </body>
 </html>

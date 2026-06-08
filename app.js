@@ -3,8 +3,10 @@ const TRACKER_APP_ID = "embers-tracker";
 const TRACKER_SCHEMA_VERSION = 1;
 const DRIVE_SYNC_FILE_NAME = "Embers Tracker Sync.json";
 const DRIVE_SYNC_FOLDER_NAME = "Embers Tracker Files";
-const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive";
+const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 const DEFAULT_GOOGLE_CLIENT_ID = "428700740931-sos1bugq8r2f4eaqli22tkeind062sm3.apps.googleusercontent.com";
+const DEFAULT_GOOGLE_APP_ID = "428700740931";
+const DEFAULT_GOOGLE_API_KEY = "";
 
 let driveTokenClient = null;
 let driveAccessToken = "";
@@ -14,6 +16,7 @@ let suppressDriveAutoPush = false;
 let driveSyncInFlight = false;
 let driveSyncHydrated = false;
 let driveTrackerFiles = [];
+let googlePickerReady = false;
 
 const slug = (text) =>
   String(text)
@@ -146,7 +149,7 @@ function buildEmptyData() {
     settings: {
       rosterChecked: false,
       badgeProgressResetDone: false,
-      driveSync: { clientId: "", folderId: "", folderName: DRIVE_SYNC_FOLDER_NAME, fileId: "", fileName: DRIVE_SYNC_FILE_NAME, autoPull: true, autoPush: true, remoteModifiedTime: "", lastPulledAt: "", lastPushedAt: "", webViewLink: "" },
+      driveSync: { clientId: "", apiKey: "", appId: "", folderId: "", folderName: DRIVE_SYNC_FOLDER_NAME, fileId: "", fileName: DRIVE_SYNC_FILE_NAME, autoPull: true, autoPush: true, remoteModifiedTime: "", lastPulledAt: "", lastPushedAt: "", webViewLink: "" },
     },
     createdAt: new Date().toISOString(),
   };
@@ -686,11 +689,18 @@ function saveState() {
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 
+function googleAppIdFromClientId(clientId = "") {
+  const match = String(clientId || "").match(/^(\d+)-/);
+  return match?.[1] || DEFAULT_GOOGLE_APP_ID;
+}
+
 function driveSyncSettings() {
   state.settings = state.settings || {};
   const existingSync = state.settings.driveSync || {};
   state.settings.driveSync = {
     clientId: DEFAULT_GOOGLE_CLIENT_ID,
+    apiKey: DEFAULT_GOOGLE_API_KEY,
+    appId: DEFAULT_GOOGLE_APP_ID,
     folderId: "",
     folderName: DRIVE_SYNC_FOLDER_NAME,
     fileId: "",
@@ -704,6 +714,7 @@ function driveSyncSettings() {
     ...existingSync,
   };
   if (!state.settings.driveSync.clientId) state.settings.driveSync.clientId = DEFAULT_GOOGLE_CLIENT_ID;
+  if (!state.settings.driveSync.appId) state.settings.driveSync.appId = googleAppIdFromClientId(state.settings.driveSync.clientId);
   if (!state.settings.driveSync.folderName) state.settings.driveSync.folderName = DRIVE_SYNC_FOLDER_NAME;
   if (!state.settings.driveSync.fileName) state.settings.driveSync.fileName = DRIVE_SYNC_FILE_NAME;
   if (!driveSyncHydrated && existingSync.autoPush === false && !existingSync.autoPushUserSet) {
@@ -762,6 +773,10 @@ function renderDriveSyncSettings() {
   renderUnitTrackerTitle();
   const clientId = $("#driveClientId");
   if (clientId) clientId.value = sync.clientId || "";
+  const apiKey = $("#driveApiKey");
+  if (apiKey) apiKey.value = sync.apiKey || "";
+  const appId = $("#driveAppId");
+  if (appId) appId.value = sync.appId || googleAppIdFromClientId(sync.clientId);
   if ($("#driveFileId")) $("#driveFileId").value = sync.fileId || "";
   const fileSelect = $("#driveFileSelect");
   if (fileSelect) {
@@ -789,9 +804,13 @@ function renderDriveSyncSettings() {
 function saveDriveSyncSettingsFromForm(source = "data") {
   const sync = driveSyncSettings();
   const clientInput = source === "login" ? null : $("#driveClientId");
+  const apiKeyInput = source === "login" ? null : $("#driveApiKey");
+  const appIdInput = source === "login" ? null : $("#driveAppId");
   const fileInput = source === "login" ? null : $("#driveFileId");
   const fileSelect = source === "login" ? null : $("#driveFileSelect");
   if (clientInput) sync.clientId = clientInput.value.trim();
+  if (apiKeyInput) sync.apiKey = apiKeyInput.value.trim();
+  if (appIdInput) sync.appId = appIdInput.value.trim() || googleAppIdFromClientId(sync.clientId);
   if (fileInput?.value.trim()) sync.fileId = fileInput.value.trim();
   if (fileSelect && fileSelect.value) {
     sync.fileId = fileSelect.value;
@@ -825,6 +844,42 @@ function waitForGoogleIdentity() {
       } else if (attempts > 80) {
         clearInterval(timer);
         reject(new Error("Google Identity Services did not load."));
+      }
+    }, 100);
+  });
+}
+
+function waitForGooglePicker() {
+  return new Promise((resolve, reject) => {
+    const loadPicker = () => {
+      if (!window.gapi?.load) return false;
+      window.gapi.load("picker", {
+        callback: () => {
+          googlePickerReady = true;
+          resolve();
+        },
+        onerror: () => reject(new Error("Google Picker did not load.")),
+        timeout: 8000,
+        ontimeout: () => reject(new Error("Google Picker timed out.")),
+      });
+      return true;
+    };
+    if (window.google?.picker && googlePickerReady) {
+      resolve();
+      return;
+    }
+    if (loadPicker()) return;
+    let attempts = 0;
+    const timer = setInterval(() => {
+      attempts += 1;
+      if (window.google?.picker && googlePickerReady) {
+        clearInterval(timer);
+        resolve();
+      } else if (loadPicker()) {
+        clearInterval(timer);
+      } else if (attempts > 80) {
+        clearInterval(timer);
+        reject(new Error("Google API loader did not load."));
       }
     }, 100);
   });
@@ -943,8 +998,7 @@ async function findDriveSyncFiles() {
   const folderQuery = { q: `'${driveQueryEscape(folder.id)}' in parents and mimeType = 'application/json' and trashed = false`, needsTrackerCheck: false };
   const legacyName = driveQueryEscape(DRIVE_SYNC_FILE_NAME);
   const legacyQuery = { q: `name = '${legacyName}' and mimeType = 'application/json' and trashed = false`, needsTrackerCheck: true };
-  const sharedQuery = { q: `sharedWithMe = true and mimeType = 'application/json' and trashed = false`, needsTrackerCheck: true };
-  const queries = [folderQuery, sharedQuery, legacyQuery];
+  const queries = [folderQuery, legacyQuery];
   const seen = new Set();
   const files = [];
   for (const query of queries) {
@@ -988,6 +1042,64 @@ async function isDriveTrackerFile(fileId) {
   }
 }
 
+function pickerSetupMessage() {
+  return "Add a Google Picker API key in Data > Google Drive sync to open shared trackers from Drive.";
+}
+
+async function openDriveFilePicker() {
+  saveDriveSyncSettingsFromForm();
+  const sync = driveSyncSettings();
+  if (!sync.clientId) throw new Error("Add a Google OAuth Client ID first.");
+  if (!sync.apiKey) throw new Error(pickerSetupMessage());
+  await ensureDriveToken(driveAccessToken ? "" : "consent");
+  await waitForGooglePicker();
+  setDriveSyncStatus("Choose a unit tracker JSON file from Google Drive...", "Choose unit");
+  return new Promise((resolve, reject) => {
+    const view = new google.picker.DocsView(google.picker.ViewId.DOCS)
+      .setMimeTypes("application/json")
+      .setMode(google.picker.DocsViewMode.LIST);
+    const picker = new google.picker.PickerBuilder()
+      .setDeveloperKey(sync.apiKey)
+      .setAppId(sync.appId || googleAppIdFromClientId(sync.clientId))
+      .setOAuthToken(driveAccessToken)
+      .setTitle("Choose a unit tracker")
+      .addView(view)
+      .setCallback(async (data) => {
+        if (data.action === google.picker.Action.CANCEL) {
+          setDriveSyncStatus("Tracker selection cancelled.", "Connected");
+          resolve(null);
+          return;
+        }
+        if (data.action !== google.picker.Action.PICKED) return;
+        const document = data[google.picker.Response.DOCUMENTS]?.[0];
+        const fileId = document?.[google.picker.Document.ID];
+        if (!fileId) {
+          reject(new Error("Google Picker did not return a file."));
+          return;
+        }
+        try {
+          const metadata = await driveFileMetadata(fileId);
+          if (!(await isDriveTrackerFile(fileId))) {
+            throw new Error("That file is not an Embers Tracker JSON file.");
+          }
+          const pickedFile = {
+            id: metadata.id || fileId,
+            name: metadata.name || document[google.picker.Document.NAME] || DRIVE_SYNC_FILE_NAME,
+            modifiedTime: metadata.modifiedTime || "",
+            webViewLink: metadata.webViewLink || document[google.picker.Document.URL] || "",
+            parents: metadata.parents || [],
+          };
+          driveTrackerFiles = [pickedFile, ...driveTrackerFiles.filter((file) => file.id !== pickedFile.id)];
+          resolve(pickedFile);
+        } catch (error) {
+          reject(error);
+        }
+      })
+      .build();
+    picker.setVisible(true);
+  });
+}
+
 function renderLoginDriveChooser(files = []) {
   const chooser = $("#loginDriveChooser");
   if (!chooser) return;
@@ -1007,6 +1119,7 @@ function renderLoginDriveChooser(files = []) {
       <div class="drive-create-inline">
         <input id="loginDriveNewFileName" class="compact-input" type="text" placeholder="New unit name, e.g. Tuesday Embers" />
         <button class="quiet-button" id="loginDriveCreate" type="button">Create named tracker</button>
+        <button class="quiet-button" id="loginDrivePicker" type="button">Open tracker from Drive</button>
       </div>
     </div>
   `;
@@ -1016,16 +1129,21 @@ function renderSwitchTrackerList(files = driveTrackerFiles) {
   const list = $("#switchTrackerList");
   if (!list) return;
   const sync = driveSyncSettings();
-  list.innerHTML = files.length ? `
-    <div class="drive-file-options">
-      ${files.map((file) => `
-        <button class="drive-file-option ${file.id === sync.fileId ? "is-current" : ""}" data-switch-drive-file="${escapeAttr(file.id)}" type="button">
-          <strong>${escapeHtml(file.name || DRIVE_SYNC_FILE_NAME)}</strong>
-          <span>${file.id === sync.fileId ? "Current unit tracker" : "Load this unit tracker"} - Updated ${escapeHtml(formatDateTime(file.modifiedTime))}</span>
-        </button>
-      `).join("")}
+  list.innerHTML = `
+    ${files.length ? `
+      <div class="drive-file-options">
+        ${files.map((file) => `
+          <button class="drive-file-option ${file.id === sync.fileId ? "is-current" : ""}" data-switch-drive-file="${escapeAttr(file.id)}" type="button">
+            <strong>${escapeHtml(file.name || DRIVE_SYNC_FILE_NAME)}</strong>
+            <span>${file.id === sync.fileId ? "Current unit tracker" : "Load this unit tracker"} - Updated ${escapeHtml(formatDateTime(file.modifiedTime))}</span>
+          </button>
+        `).join("")}
+      </div>
+    ` : `<p class="muted">No unit trackers were found. Create one or open a shared tracker from Drive.</p>`}
+    <div class="drive-create-inline">
+      <button class="quiet-button" id="switchTrackerPicker" type="button">Open tracker from Drive</button>
     </div>
-  ` : `<p class="muted">No unit trackers were found. Create one in Data or ask another leader to share it with this Google account.</p>`;
+  `;
 }
 
 async function openSwitchTrackerModal() {
@@ -1069,10 +1187,17 @@ async function signInAndFindDriveFile() {
   $("#loginDriveChooser").innerHTML = "";
   setDriveSyncStatus("Signing in with Google...", "Working");
   await requestDriveAccessToken("consent");
-  setDriveSyncStatus(`Looking for unit trackers in ${DRIVE_SYNC_FOLDER_NAME}...`, "Working");
+  if (sync.fileId) {
+    setDriveSyncStatus("Loading the remembered unit tracker...", "Working");
+    await pullDriveSyncFile();
+    switchTab("planning");
+    showToast("Latest tracker loaded from Google Drive.");
+    return;
+  }
+  setDriveSyncStatus(`Looking for unit trackers created by this app...`, "Working");
   const files = await findDriveSyncFiles();
   renderLoginDriveChooser(files);
-  setDriveSyncStatus(files.length ? "Choose the unit tracker to load." : "No unit tracker found. Create one, or ask the owner to share it with this Google account.", files.length ? "Choose unit" : "No unit found");
+  setDriveSyncStatus(files.length ? "Choose the unit tracker to load, or open one from Drive." : "Create a tracker, or open a shared tracker from Drive.", files.length ? "Choose unit" : "No unit found");
 }
 
 async function tryRememberedGoogleLogin() {
@@ -4860,6 +4985,18 @@ $("#refreshSwitchTrackers")?.addEventListener("click", async () => {
 });
 
 $("#switchTrackerList")?.addEventListener("click", async (event) => {
+  if (event.target.closest("#switchTrackerPicker")) {
+    try {
+      const picked = await openDriveFilePicker();
+      if (!picked) return;
+      await loadDriveFileById(picked.id);
+      closeSwitchTrackerModal();
+    } catch (error) {
+      setDriveSyncStatus(`Could not open tracker from Drive: ${error.message}`, "Needs setup");
+      showToast("Could not open tracker from Drive.");
+    }
+    return;
+  }
   const fileButton = event.target.closest("[data-switch-drive-file]");
   if (!fileButton) return;
   try {
@@ -5002,6 +5139,17 @@ $("#loginDriveChooser").addEventListener("click", async (event) => {
     }
     return;
   }
+  if (event.target.closest("#loginDrivePicker")) {
+    try {
+      const picked = await openDriveFilePicker();
+      if (!picked) return;
+      await loadDriveFileById(picked.id);
+    } catch (error) {
+      setDriveSyncStatus(`Could not open tracker from Drive: ${error.message}`, "Needs setup");
+      showToast("Could not open tracker from Drive.");
+    }
+    return;
+  }
   if (!event.target.closest("#loginDriveCreate")) return;
   try {
     saveDriveSyncSettingsFromForm("login");
@@ -5012,6 +5160,18 @@ $("#loginDriveChooser").addEventListener("click", async (event) => {
   } catch (error) {
     setDriveSyncStatus(`Could not create shared file: ${error.message}`, "Needs setup");
     showToast("Could not create shared file.");
+  }
+});
+
+$("#driveOpenPicker")?.addEventListener("click", async () => {
+  try {
+    saveDriveSyncSettingsFromForm();
+    const picked = await openDriveFilePicker();
+    if (!picked) return;
+    await loadDriveFileById(picked.id);
+  } catch (error) {
+    setDriveSyncStatus(`Open from Drive failed: ${error.message}`, "Needs setup");
+    showToast("Could not open tracker from Drive.");
   }
 });
 
