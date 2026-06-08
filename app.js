@@ -768,6 +768,19 @@ function rememberSelectedDriveFile(file) {
   sync.autoPush = true;
 }
 
+function clearRememberedDriveFile() {
+  const sync = driveSyncSettings();
+  sync.fileId = "";
+  sync.fileName = DRIVE_SYNC_FILE_NAME;
+  sync.remoteModifiedTime = "";
+  sync.webViewLink = "";
+}
+
+function isDriveFileAccessError(error) {
+  const message = String(error?.message || error || "");
+  return /File not found|notFound|"code"\s*:\s*(403|404)|PERMISSION_DENIED|permission|forbidden/i.test(message);
+}
+
 function renderDriveSyncSettings() {
   const sync = driveSyncSettings();
   renderUnitTrackerTitle();
@@ -1189,10 +1202,21 @@ async function signInAndFindDriveFile() {
   await requestDriveAccessToken("consent");
   if (sync.fileId) {
     setDriveSyncStatus("Loading the remembered unit tracker...", "Working");
-    await pullDriveSyncFile();
-    switchTab("planning");
-    showToast("Latest tracker loaded from Google Drive.");
-    return;
+    try {
+      await pullDriveSyncFile();
+      switchTab("planning");
+      showToast("Latest tracker loaded from Google Drive.");
+      return;
+    } catch (error) {
+      if (!isDriveFileAccessError(error)) throw error;
+      clearRememberedDriveFile();
+      suppressDriveAutoPush = true;
+      saveState();
+      suppressDriveAutoPush = false;
+      renderDriveSyncSettings();
+      $("#loginDriveChooser").innerHTML = "";
+      setDriveSyncStatus("That Google account does not have access to the remembered tracker. Choose a shared tracker or create a new one.", "Choose unit");
+    }
   }
   setDriveSyncStatus(`Looking for unit trackers created by this app...`, "Working");
   const files = await findDriveSyncFiles();
@@ -1209,7 +1233,14 @@ async function tryRememberedGoogleLogin() {
     await pullDriveSyncFile();
     switchTab("planning");
     showToast("Latest tracker loaded from Google Drive.");
-  } catch {
+  } catch (error) {
+    if (isDriveFileAccessError(error)) {
+      clearRememberedDriveFile();
+      suppressDriveAutoPush = true;
+      saveState();
+      suppressDriveAutoPush = false;
+      renderDriveSyncSettings();
+    }
     setDriveSyncStatus("Sign in with Google to load the latest shared tracker.");
   }
 }
