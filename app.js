@@ -767,6 +767,10 @@ function setAppScriptSyncStatus(message, stateLabel = "") {
 
 function saveAppScriptSyncSettingsFromForm(source = "data") {
   const sync = appScriptSyncSettings();
+  if (source === "remembered") {
+    renderAppScriptSyncSettings();
+    return;
+  }
   const endpointInput = source === "login" ? $("#loginCodeEndpoint") : $("#appScriptEndpoint");
   const codeInput = source === "login" ? $("#loginTrackerCode") : $("#appScriptTrackerCode");
   const pinInput = source === "login" ? $("#loginTrackerPin") : $("#appScriptPin");
@@ -878,6 +882,21 @@ async function pullAppScriptTracker(source = "data") {
   suppressAppScriptAutoPush = false;
   renderAll();
   setAppScriptSyncStatus("Latest tracker loaded by code.", "Connected");
+}
+
+async function tryRememberedAppScriptLogin() {
+  const sync = appScriptSyncSettings();
+  if (!sync.endpoint || !sync.trackerCode || !sync.pin) return false;
+  setAppScriptSyncStatus("Loading the remembered tracker code...", "Working");
+  try {
+    await pullAppScriptTracker("remembered");
+    switchTab("planning");
+    showToast("Latest tracker loaded by code.");
+    return true;
+  } catch (error) {
+    setAppScriptSyncStatus(`Remembered tracker code could not load: ${error.message}`, "Needs review");
+    return false;
+  }
 }
 
 async function pushAppScriptTracker(options = {}) {
@@ -5390,6 +5409,10 @@ $("#loginCodeCreate")?.addEventListener("click", async () => {
   }
 });
 
+["#loginCodeEndpoint", "#loginTrackerCode", "#loginTrackerPin", "#loginTrackerName"].forEach((selector) => {
+  $(selector)?.addEventListener("change", () => saveAppScriptSyncSettingsFromForm("login"));
+});
+
 $("#loginDriveChooser").addEventListener("click", async (event) => {
   const fileButton = event.target.closest("[data-login-drive-file]");
   if (fileButton) {
@@ -5433,6 +5456,10 @@ $("#appScriptCreateTracker")?.addEventListener("click", async () => {
     setAppScriptSyncStatus(`Create failed: ${error.message}`, "Needs setup");
     showToast("Could not create tracker code.");
   }
+});
+
+["#appScriptEndpoint", "#appScriptTrackerCode", "#appScriptPin", "#appScriptTrackerName", "#appScriptAutoPush"].forEach((selector) => {
+  $(selector)?.addEventListener("change", () => saveAppScriptSyncSettingsFromForm("data"));
 });
 
 $("#appScriptPullTracker")?.addEventListener("click", async () => {
@@ -5575,4 +5602,7 @@ if ("ResizeObserver" in window) {
 
 renderAll();
 resetChatMessages();
-tryRememberedGoogleLogin();
+(async () => {
+  const loadedByCode = await tryRememberedAppScriptLogin();
+  if (!loadedByCode) tryRememberedGoogleLogin();
+})();
