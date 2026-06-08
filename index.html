@@ -576,6 +576,10 @@
               Tracker name
               <input id="appScriptTrackerName" type="text" placeholder="46th Windsor Embers" />
             </label>
+            <label>
+              Admin code
+              <input id="appScriptAdminPin" type="password" placeholder="Only for listing all trackers" />
+            </label>
           </div>
           <div class="drive-sync-options">
             <label class="check-row">
@@ -587,7 +591,9 @@
             <button class="quiet-button" id="appScriptCreateTracker" type="button">Create tracker code</button>
             <button class="quiet-button" id="appScriptPullTracker" type="button">Pull by code</button>
             <button class="quiet-button" id="appScriptPushTracker" type="button">Push by code</button>
+            <button class="quiet-button" id="appScriptListTrackers" type="button">List all trackers</button>
           </div>
+          <div id="appScriptTrackerList" class="drive-file-list"></div>
           <p class="muted" id="appScriptSyncStatus">Use a tracker code to sync without Google sign-in.</p>
         </section>
 

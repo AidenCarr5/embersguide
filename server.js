@@ -146,6 +146,7 @@ async function handleAppsScriptSync(request, response) {
       action: body.action,
       code: body.code,
       pin: body.pin,
+      adminPin: body.adminPin,
       name: body.name,
       payload: body.payload,
       clientUpdatedAt: body.clientUpdatedAt,

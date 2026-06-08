@@ -26,9 +26,18 @@ The script stores tracker JSON files in a Google Drive folder named `Embers Trac
 
 Other leaders can open the same tracker from the login screen by entering the web app URL, tracker code, and PIN.
 
+## Admin code
+
+The Data page includes **List all trackers**. This uses an admin code so the script owner can see every tracker code created through the Apps Script backend.
+
+- The first admin code entered becomes the admin code for that Apps Script deployment.
+- After that, the same admin code is required to list all trackers.
+- To reset the admin code, open the Apps Script project, go to **Project Settings > Script properties**, and delete `ADMIN_PIN_HASH`.
+
 ## Notes
 
 - No Google sign-in is required inside Embers Tracker.
 - Anyone with the web app URL, tracker code, and PIN can read or edit that tracker.
+- Anyone with the web app URL and admin code can list tracker names and tracker codes.
 - Keep the PIN private and use a different PIN for each unit tracker.
 - If multiple leaders edit at the exact same time, the latest save can overwrite earlier changes.

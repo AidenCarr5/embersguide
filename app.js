@@ -817,6 +817,7 @@ async function appScriptRequest(action, extra = {}) {
       action,
       code: extra.code ?? sync.trackerCode,
       pin: extra.pin ?? sync.pin,
+      adminPin: extra.adminPin,
       name: extra.name ?? sync.trackerName,
       payload: extra.payload,
       clientUpdatedAt: state.updatedAt || "",
@@ -912,6 +913,31 @@ function scheduleAppScriptAutoPush() {
   appScriptAutoPushTimer = setTimeout(() => {
     pushAppScriptTracker({ auto: true }).catch((error) => setAppScriptSyncStatus(`Code sync skipped: ${error.message}`, "Needs review"));
   }, 1800);
+}
+
+function renderAppScriptTrackerList(trackers = []) {
+  const list = $("#appScriptTrackerList");
+  if (!list) return;
+  list.innerHTML = trackers.length ? `
+    <div class="drive-file-options">
+      ${trackers.map((tracker) => `
+        <button class="drive-file-option" data-app-script-tracker-code="${escapeAttr(tracker.code)}" type="button">
+          <strong>${escapeHtml(tracker.name || "Unit tracker")}</strong>
+          <span>${escapeHtml(tracker.code)} - Updated ${escapeHtml(formatDateTime(tracker.updatedAt))}</span>
+        </button>
+      `).join("")}
+    </div>
+  ` : `<p class="muted">No tracker codes found for this admin code.</p>`;
+}
+
+async function listAppScriptTrackers() {
+  saveAppScriptSyncSettingsFromForm("data");
+  const adminPin = $("#appScriptAdminPin")?.value.trim() || "";
+  if (!adminPin) throw new Error("Enter the admin code first.");
+  setAppScriptSyncStatus("Listing all tracker codes...", "Working");
+  const data = await appScriptRequest("list", { adminPin });
+  renderAppScriptTrackerList(data.trackers || []);
+  setAppScriptSyncStatus(`Found ${(data.trackers || []).length} tracker code${(data.trackers || []).length === 1 ? "" : "s"}.`, "Connected");
 }
 
 function unitTrackerDisplayName() {
@@ -5427,6 +5453,23 @@ $("#appScriptPushTracker")?.addEventListener("click", async () => {
     setAppScriptSyncStatus(`Push failed: ${error.message}`, "Needs setup");
     showToast("Could not push tracker code.");
   }
+});
+
+$("#appScriptListTrackers")?.addEventListener("click", async () => {
+  try {
+    await listAppScriptTrackers();
+  } catch (error) {
+    setAppScriptSyncStatus(`List failed: ${error.message}`, "Needs setup");
+    showToast("Could not list trackers.");
+  }
+});
+
+$("#appScriptTrackerList")?.addEventListener("click", (event) => {
+  const tracker = event.target.closest("[data-app-script-tracker-code]");
+  if (!tracker) return;
+  $("#appScriptTrackerCode").value = tracker.dataset.appScriptTrackerCode || "";
+  saveAppScriptSyncSettingsFromForm("data");
+  showToast("Tracker code selected.");
 });
 
 $("#driveOpenPicker")?.addEventListener("click", async () => {

@@ -8,6 +8,7 @@ function doPost(event) {
     if (action === "create") return jsonResponse(createTracker(request));
     if (action === "pull") return jsonResponse(pullTracker(request));
     if (action === "push") return jsonResponse(pushTracker(request));
+    if (action === "list") return jsonResponse(listTrackers(request));
     return jsonResponse({ ok: false, error: "Unknown action." });
   } catch (error) {
     return jsonResponse({ ok: false, error: error.message || "Apps Script error." });
@@ -61,6 +62,23 @@ function saveTrackerRecord(record) {
   PropertiesService.getScriptProperties().setProperty(propertyKey(record.code), JSON.stringify(record));
 }
 
+function adminPinHash() {
+  return PropertiesService.getScriptProperties().getProperty("ADMIN_PIN_HASH");
+}
+
+function requireAdminAccess(request) {
+  const pin = String(request.adminPin || "").trim();
+  if (!pin) throw new Error("Admin code is required.");
+  const hash = pinHash(pin);
+  const properties = PropertiesService.getScriptProperties();
+  const saved = adminPinHash();
+  if (!saved) {
+    properties.setProperty("ADMIN_PIN_HASH", hash);
+    return;
+  }
+  if (saved !== hash) throw new Error("Admin code did not match.");
+}
+
 function requireTrackerAccess(request) {
   const code = cleanCode(request.code);
   if (!code) throw new Error("Tracker code is required.");
@@ -104,6 +122,22 @@ function pushTracker(request) {
   record.updatedAt = now;
   saveTrackerRecord(record);
   return { ok: true, code: record.code, name: record.name, updatedAt: now };
+}
+
+function listTrackers(request) {
+  requireAdminAccess(request);
+  const properties = PropertiesService.getScriptProperties().getProperties();
+  const trackers = Object.keys(properties)
+    .filter((key) => key.indexOf("tracker:") === 0)
+    .map((key) => JSON.parse(properties[key]))
+    .map((record) => ({
+      code: record.code,
+      name: record.name,
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt,
+    }))
+    .sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
+  return { ok: true, trackers };
 }
 
 function normalizePayload(payload) {
