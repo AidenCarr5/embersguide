@@ -5606,5 +5606,5 @@ renderAll();
 resetChatMessages();
 (async () => {
   const loadedByCode = await tryRememberedAppScriptLogin();
-  if (!loadedByCode) tryRememberedGoogleLogin();
+  if (!loadedByCode) setAppScriptSyncStatus("Enter a tracker code and PIN to open a unit tracker.");
 })();
