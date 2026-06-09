@@ -1040,6 +1040,20 @@ function renderUnitTrackerTitle() {
   document.title = title;
 }
 
+function showTrackerCodeLogin(options = {}) {
+  closeSwitchTrackerModal();
+  switchTab("login");
+  const sync = appScriptSyncSettings();
+  if ($("#loginCodeEndpoint")) $("#loginCodeEndpoint").value = sync.endpoint || DEFAULT_APPS_SCRIPT_ENDPOINT;
+  if ($("#loginTrackerCode")) $("#loginTrackerCode").value = options.keepCurrent ? sync.trackerCode || "" : "";
+  if ($("#loginTrackerPin")) $("#loginTrackerPin").value = options.keepCurrent ? sync.pin || "" : "";
+  if ($("#loginNewTrackerName")) $("#loginNewTrackerName").value = "";
+  if ($("#loginNewTrackerPin")) $("#loginNewTrackerPin").value = "";
+  if ($("#loginNewTrackerCode")) $("#loginNewTrackerCode").value = "";
+  setAppScriptSyncStatus("Enter a tracker code and PIN to open a unit tracker.");
+  setTimeout(() => $("#loginTrackerCode")?.focus(), 0);
+}
+
 function rememberSelectedDriveFile(file) {
   if (!file?.id) return;
   const sync = driveSyncSettings();
@@ -4524,12 +4538,8 @@ document.addEventListener("click", (event) => {
   }
 
   if (event.target.closest("#switchTrackerTop")) {
-    openSwitchTrackerModal()
-      .catch((error) => {
-        closeSwitchTrackerModal();
-        setDriveSyncStatus(`Switch failed: ${error.message}`, "Needs setup");
-        showToast("Could not load unit trackers.");
-      });
+    showTrackerCodeLogin();
+    showToast("Enter another tracker code to switch units.");
     return;
   }
 
