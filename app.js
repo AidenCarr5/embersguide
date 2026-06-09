@@ -782,10 +782,10 @@ function saveAppScriptSyncSettingsFromForm(source = "data") {
     renderAppScriptSyncSettings();
     return;
   }
-  const endpointInput = source === "login" ? $("#loginCodeEndpoint") : $("#appScriptEndpoint");
-  const codeInput = source === "login" ? $("#loginTrackerCode") : $("#appScriptTrackerCode");
-  const pinInput = source === "login" ? $("#loginTrackerPin") : $("#appScriptPin");
-  const nameInput = source === "login" ? $("#loginTrackerName") : $("#appScriptTrackerName");
+  const endpointInput = source === "login" || source === "login-create" ? $("#loginCodeEndpoint") : $("#appScriptEndpoint");
+  const codeInput = source === "login-create" ? $("#loginNewTrackerCode") : source === "login" ? $("#loginTrackerCode") : $("#appScriptTrackerCode");
+  const pinInput = source === "login-create" ? $("#loginNewTrackerPin") : source === "login" ? $("#loginTrackerPin") : $("#appScriptPin");
+  const nameInput = source === "login-create" ? $("#loginNewTrackerName") : source === "login" ? null : $("#appScriptTrackerName");
   const adminInput = $("#appScriptAdminPin");
   if (endpointInput) sync.endpoint = endpointInput.value.trim() || DEFAULT_APPS_SCRIPT_ENDPOINT;
   if (codeInput) sync.trackerCode = codeInput.value.trim().toUpperCase();
@@ -815,7 +815,6 @@ function renderAppScriptSyncSettings() {
   if ($("#loginCodeEndpoint")) $("#loginCodeEndpoint").value = sync.endpoint || "";
   if ($("#loginTrackerCode")) $("#loginTrackerCode").value = sync.trackerCode || "";
   if ($("#loginTrackerPin")) $("#loginTrackerPin").value = sync.pin || "";
-  if ($("#loginTrackerName")) $("#loginTrackerName").value = sync.trackerName || "";
   const pieces = [];
   if (sync.trackerCode) pieces.push(`Tracker code: ${sync.trackerCode}`);
   if (sync.adminMode) pieces.push("Admin access");
@@ -850,7 +849,7 @@ async function appScriptRequest(action, extra = {}) {
 
 function rememberAppScriptTracker(data, source = "data") {
   const sync = appScriptSyncSettings();
-  sync.endpoint = source === "login"
+  sync.endpoint = source === "login" || source === "login-create"
     ? $("#loginCodeEndpoint")?.value.trim() || sync.endpoint || DEFAULT_APPS_SCRIPT_ENDPOINT
     : $("#appScriptEndpoint")?.value.trim() || sync.endpoint || DEFAULT_APPS_SCRIPT_ENDPOINT;
   sync.trackerCode = String(data.code || sync.trackerCode || "").trim().toUpperCase();
@@ -5456,7 +5455,10 @@ $("#loginCodeOpen")?.addEventListener("click", async () => {
 
 $("#loginCodeCreate")?.addEventListener("click", async () => {
   try {
-    const created = await createAppScriptTracker("login");
+    const created = await createAppScriptTracker("login-create");
+    const sync = appScriptSyncSettings();
+    if ($("#loginTrackerCode")) $("#loginTrackerCode").value = sync.trackerCode || created.code || "";
+    if ($("#loginTrackerPin")) $("#loginTrackerPin").value = sync.pin || "";
     await pullAppScriptTracker("login");
     switchTab("planning");
     showToast(`Tracker code created: ${created.code}`);
@@ -5466,7 +5468,7 @@ $("#loginCodeCreate")?.addEventListener("click", async () => {
   }
 });
 
-["#loginCodeEndpoint", "#loginTrackerCode", "#loginTrackerPin", "#loginTrackerName"].forEach((selector) => {
+["#loginCodeEndpoint", "#loginTrackerCode", "#loginTrackerPin"].forEach((selector) => {
   $(selector)?.addEventListener("change", () => saveAppScriptSyncSettingsFromForm("login"));
 });
 

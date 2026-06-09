@@ -228,6 +228,46 @@ body.login-mode main {
   max-width: 640px;
 }
 
+.login-action-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.login-action-panel {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--guide-aqua) 22%, white);
+}
+
+.login-action-panel h3 {
+  margin-bottom: 0;
+}
+
+.login-action-panel .muted {
+  margin-bottom: 0;
+}
+
+.login-field-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.login-status-strip {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+}
+
+.login-status-strip p {
+  margin: 0;
+}
+
 .drive-file-chooser:empty {
   display: none;
 }
@@ -284,6 +324,12 @@ body.login-mode main {
   align-items: center;
   padding-top: 10px;
   border-top: 1px solid var(--line);
+}
+
+@media (max-width: 760px) {
+  .login-action-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .dashboard-grid {

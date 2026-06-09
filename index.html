@@ -7,7 +7,7 @@
     <title>Embers Tracker</title>
     <link rel="icon" type="image/png" href="./assets/girl-guides-trefoil-icon.png" />
     <link rel="apple-touch-icon" href="./assets/girl-guides-trefoil-icon-1024.png" />
-    <link rel="stylesheet" href="./styles.css?v=20260608-code-sync" />
+    <link rel="stylesheet" href="./styles.css?v=20260608-login-split" />
     <script src="https://apis.google.com/js/api.js" async defer></script>
     <script src="https://accounts.google.com/gsi/client" async defer></script>
   </head>
@@ -50,32 +50,54 @@
           </div>
           <div class="login-copy">
             <h2>Open the latest tracker</h2>
-            <p class="muted">Use a tracker code, Google Drive, or open offline.</p>
+            <p class="muted">Use your unit tracker code and PIN to load the latest saved version.</p>
           </div>
-          <div class="drive-file-list">
-            <h3>Open with tracker code</h3>
-            <div class="drive-sync-grid">
+          <div class="login-action-grid">
+            <div class="login-action-panel">
+              <h3>Open existing tracker</h3>
+              <p class="muted">For leaders joining a unit that already has a tracker.</p>
               <label class="hidden">
                 Sync web app URL
                 <input id="loginCodeEndpoint" type="url" placeholder="Paste the Apps Script web app URL" />
               </label>
-              <label>
-                Tracker code
-                <input id="loginTrackerCode" type="text" placeholder="46TH-WINDSOR-EMBER" />
-              </label>
-              <label>
-                PIN
-                <input id="loginTrackerPin" type="password" placeholder="Shared PIN" />
-              </label>
-              <label>
-                New tracker name
-                <input id="loginTrackerName" type="text" placeholder="46th Windsor Embers" />
-              </label>
+              <div class="login-field-grid">
+                <label>
+                  Tracker code
+                  <input id="loginTrackerCode" type="text" placeholder="46TH-WINDSOR-EMBERS" />
+                </label>
+                <label>
+                  PIN
+                  <input id="loginTrackerPin" type="password" placeholder="Shared PIN" />
+                </label>
+              </div>
+              <div class="data-actions">
+                <button class="primary-button" id="loginCodeOpen" type="button">Open tracker</button>
+              </div>
             </div>
-            <div class="data-actions">
-              <button class="primary-button" id="loginCodeOpen" type="button">Open tracker code</button>
-              <button class="quiet-button" id="loginCodeCreate" type="button">Create tracker code</button>
+
+            <div class="login-action-panel">
+              <h3>Create new tracker</h3>
+              <p class="muted">For starting a new unit tracker from this computer.</p>
+              <div class="login-field-grid">
+                <label>
+                  Tracker name
+                  <input id="loginNewTrackerName" type="text" placeholder="46th Windsor Embers" />
+                </label>
+                <label>
+                  Shared PIN
+                  <input id="loginNewTrackerPin" type="password" placeholder="Choose a PIN" />
+                </label>
+                <label>
+                  Custom tracker code
+                  <input id="loginNewTrackerCode" type="text" placeholder="Optional" />
+                </label>
+              </div>
+              <div class="data-actions">
+                <button class="quiet-button" id="loginCodeCreate" type="button">Create new tracker</button>
+              </div>
             </div>
+          </div>
+          <div class="login-status-strip">
             <p class="muted" id="loginCodeStatus">Use a tracker code to sync without Google sign-in.</p>
           </div>
           <div id="loginDriveChooser" class="drive-file-chooser hidden"></div>
@@ -750,9 +772,10 @@
     </div>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script src="./excel-attendance-data.js?v=20260608-code-sync"></script>
-    <script src="./excel-progress-data.js?v=20260608-code-sync"></script>
-    <script src="./badge-knowledge.js?v=20260608-code-sync"></script>
-    <script src="./app.js?v=20260608-code-sync"></script>
+    <script src="./excel-attendance-data.js?v=20260608-login-split"></script>
+    <script src="./excel-progress-data.js?v=20260608-login-split"></script>
+    <script src="./badge-knowledge.js?v=20260608-login-split"></script>
+    <script src="./app.js?v=20260608-login-split"></script>
   </body>
 </html>
+
