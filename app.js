@@ -816,7 +816,7 @@ function renderAppScriptSyncSettings() {
   if ($("#loginTrackerCode")) $("#loginTrackerCode").value = sync.trackerCode || "";
   if ($("#loginTrackerPin")) $("#loginTrackerPin").value = sync.pin || "";
   const pieces = [];
-  if (sync.trackerCode) pieces.push(`Tracker code: ${sync.trackerCode}`);
+  if (sync.trackerCode) pieces.push(`Tracker code (username): ${sync.trackerCode}`);
   if (sync.adminMode) pieces.push("Admin access");
   if (sync.autoPush && sync.trackerCode) pieces.push("Auto-push on");
   if (sync.lastPulledAt) pieces.push(`Last pull: ${formatDateTime(sync.lastPulledAt)}`);
