@@ -5433,7 +5433,7 @@ $("#exportJson").addEventListener("click", exportJson);
 $("#exportJsonTop").addEventListener("click", exportJson);
 $("#exportCsv").addEventListener("click", exportProgressCsv);
 
-$("#loginDriveLoad").addEventListener("click", async () => {
+$("#loginDriveLoad")?.addEventListener("click", async () => {
   try {
     await signInAndFindDriveFile();
   } catch (error) {
@@ -5472,7 +5472,7 @@ $("#loginCodeCreate")?.addEventListener("click", async () => {
   $(selector)?.addEventListener("change", () => saveAppScriptSyncSettingsFromForm("login"));
 });
 
-$("#loginDriveChooser").addEventListener("click", async (event) => {
+$("#loginDriveChooser")?.addEventListener("click", async (event) => {
   const fileButton = event.target.closest("[data-login-drive-file]");
   if (fileButton) {
     try {
@@ -5638,7 +5638,7 @@ $("#drivePushFile")?.addEventListener("click", async () => {
   }
 });
 
-$("#loginOffline").addEventListener("click", () => {
+$("#loginOffline")?.addEventListener("click", () => {
   if (!window.confirm("Open without checking Google Drive? Use this only when you cannot get online.")) return;
   switchTab("planning");
   showToast("Opened offline. Pull latest when you reconnect.");
