@@ -1,10 +1,14 @@
 {
   "name": "embers-tracker",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Desktop launcher for Embers Tracker",
   "main": "desktop-main.js",
   "private": true,
   "author": "Embers Tracker",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AidenCarr5/embersguide.git"
+  },
   "scripts": {
     "start": "electron .",
     "pack:win": "electron-builder --win nsis",
