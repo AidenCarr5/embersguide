@@ -609,6 +609,29 @@ function trackerPayloadObject() {
   };
 }
 
+function blankTrackerPayloadObject(sync = appScriptSyncSettings()) {
+  const blank = buildEmptyData();
+  return {
+    ...blank,
+    settings: {
+      ...blank.settings,
+      appScriptSync: {
+        ...(blank.settings.appScriptSync || {}),
+        endpoint: sync.endpoint || DEFAULT_APPS_SCRIPT_ENDPOINT,
+        trackerCode: sync.trackerCode || "",
+        trackerName: sync.trackerName || "",
+        pin: "",
+        adminPin: "",
+        adminMode: false,
+        autoPush: true,
+      },
+    },
+    app: TRACKER_APP_ID,
+    schemaVersion: TRACKER_SCHEMA_VERSION,
+    syncedAt: new Date().toISOString(),
+  };
+}
+
 function looksLikeTrackerPayload(value) {
   if (!value || typeof value !== "object") return false;
   if (value.app === TRACKER_APP_ID) return true;
@@ -867,7 +890,7 @@ async function createAppScriptTracker(source = "data") {
     name: sync.trackerName || unitTrackerDisplayName(),
     code: sync.trackerCode,
     pin: sync.pin,
-    payload: trackerPayloadObject(),
+    payload: blankTrackerPayloadObject(sync),
   });
   rememberAppScriptTracker(data, source);
   sync.lastPushedAt = new Date().toISOString();
