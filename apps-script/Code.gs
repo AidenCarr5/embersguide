@@ -9,6 +9,8 @@ function doPost(event) {
     if (action === "pull") return jsonResponse(pullTracker(request));
     if (action === "push") return jsonResponse(pushTracker(request));
     if (action === "list") return jsonResponse(listTrackers(request));
+    if (action === "adminpull") return jsonResponse(adminPullTracker(request));
+    if (action === "adminpush") return jsonResponse(adminPushTracker(request));
     return jsonResponse({ ok: false, error: "Unknown action." });
   } catch (error) {
     return jsonResponse({ ok: false, error: error.message || "Apps Script error." });
@@ -116,6 +118,32 @@ function pullTracker(request) {
 
 function pushTracker(request) {
   const record = requireTrackerAccess(request);
+  const payload = normalizePayload(request.payload);
+  const now = new Date().toISOString();
+  DriveApp.getFileById(record.fileId).setContent(JSON.stringify(payload, null, 2));
+  record.updatedAt = now;
+  saveTrackerRecord(record);
+  return { ok: true, code: record.code, name: record.name, updatedAt: now };
+}
+
+function adminTrackerRecord(request) {
+  requireAdminAccess(request);
+  const code = cleanCode(request.code);
+  if (!code) throw new Error("Tracker code is required.");
+  const record = trackerRecord(code);
+  if (!record) throw new Error("Tracker code was not found.");
+  return record;
+}
+
+function adminPullTracker(request) {
+  const record = adminTrackerRecord(request);
+  const file = DriveApp.getFileById(record.fileId);
+  const payload = JSON.parse(file.getBlob().getDataAsString() || "{}");
+  return { ok: true, code: record.code, name: record.name, updatedAt: record.updatedAt || file.getLastUpdated().toISOString(), payload };
+}
+
+function adminPushTracker(request) {
+  const record = adminTrackerRecord(request);
   const payload = normalizePayload(request.payload);
   const now = new Date().toISOString();
   DriveApp.getFileById(record.fileId).setContent(JSON.stringify(payload, null, 2));

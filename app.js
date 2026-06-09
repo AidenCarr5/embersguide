@@ -592,8 +592,17 @@ function normalizeState(value) {
 }
 
 function trackerPayloadObject() {
+  const settings = {
+    ...(state.settings || {}),
+    appScriptSync: {
+      ...((state.settings || {}).appScriptSync || {}),
+      adminPin: "",
+      adminMode: false,
+    },
+  };
   return {
     ...state,
+    settings,
     app: TRACKER_APP_ID,
     schemaVersion: TRACKER_SCHEMA_VERSION,
     syncedAt: new Date().toISOString(),
@@ -747,6 +756,8 @@ function appScriptSyncSettings() {
     trackerCode: "",
     trackerName: "",
     pin: "",
+    adminPin: "",
+    adminMode: false,
     autoPush: true,
     lastPulledAt: "",
     lastPushedAt: "",
@@ -775,10 +786,12 @@ function saveAppScriptSyncSettingsFromForm(source = "data") {
   const codeInput = source === "login" ? $("#loginTrackerCode") : $("#appScriptTrackerCode");
   const pinInput = source === "login" ? $("#loginTrackerPin") : $("#appScriptPin");
   const nameInput = source === "login" ? $("#loginTrackerName") : $("#appScriptTrackerName");
+  const adminInput = $("#appScriptAdminPin");
   if (endpointInput) sync.endpoint = endpointInput.value.trim() || DEFAULT_APPS_SCRIPT_ENDPOINT;
   if (codeInput) sync.trackerCode = codeInput.value.trim().toUpperCase();
   if (pinInput) sync.pin = pinInput.value.trim();
   if (nameInput) sync.trackerName = nameInput.value.trim();
+  if (adminInput) sync.adminPin = adminInput.value.trim();
   if ($("#appScriptAutoPush")) sync.autoPush = $("#appScriptAutoPush").checked;
   suppressAppScriptAutoPush = true;
   saveState();
@@ -796,6 +809,8 @@ function renderAppScriptSyncSettings() {
   if (pin) pin.value = sync.pin || "";
   const name = $("#appScriptTrackerName");
   if (name) name.value = sync.trackerName || "";
+  const admin = $("#appScriptAdminPin");
+  if (admin) admin.value = sync.adminPin || "";
   if ($("#appScriptAutoPush")) $("#appScriptAutoPush").checked = sync.autoPush !== false;
   if ($("#loginCodeEndpoint")) $("#loginCodeEndpoint").value = sync.endpoint || "";
   if ($("#loginTrackerCode")) $("#loginTrackerCode").value = sync.trackerCode || "";
@@ -803,6 +818,7 @@ function renderAppScriptSyncSettings() {
   if ($("#loginTrackerName")) $("#loginTrackerName").value = sync.trackerName || "";
   const pieces = [];
   if (sync.trackerCode) pieces.push(`Tracker code: ${sync.trackerCode}`);
+  if (sync.adminMode) pieces.push("Admin access");
   if (sync.autoPush && sync.trackerCode) pieces.push("Auto-push on");
   if (sync.lastPulledAt) pieces.push(`Last pull: ${formatDateTime(sync.lastPulledAt)}`);
   if (sync.lastPushedAt) pieces.push(`Last push: ${formatDateTime(sync.lastPushedAt)}`);
@@ -840,6 +856,7 @@ function rememberAppScriptTracker(data, source = "data") {
   sync.trackerCode = String(data.code || sync.trackerCode || "").trim().toUpperCase();
   sync.trackerName = String(data.name || sync.trackerName || "").trim();
   sync.remoteUpdatedAt = data.updatedAt || sync.remoteUpdatedAt || "";
+  sync.adminMode = false;
   sync.autoPush = true;
 }
 
@@ -875,6 +892,8 @@ async function pullAppScriptTracker(source = "data") {
     trackerCode: data.code || sync.trackerCode,
     trackerName: data.name || sync.trackerName,
     pin: sync.pin,
+    adminPin: sync.adminPin || "",
+    adminMode: false,
     autoPush: true,
     lastPulledAt: new Date().toISOString(),
     remoteUpdatedAt: data.updatedAt || "",
@@ -884,6 +903,31 @@ async function pullAppScriptTracker(source = "data") {
   suppressAppScriptAutoPush = false;
   renderAll();
   setAppScriptSyncStatus("Latest tracker loaded by code.", "Connected");
+}
+
+async function adminOpenAppScriptTracker(code, adminPin) {
+  const priorSync = { ...appScriptSyncSettings(), adminPin };
+  if (!code || !adminPin) throw new Error("Choose a tracker and enter the admin code first.");
+  setAppScriptSyncStatus("Opening tracker with admin access...", "Working");
+  const data = await appScriptRequest("adminpull", { code, adminPin });
+  state = normalizeState(data.payload);
+  state.settings.appScriptSync = {
+    ...(state.settings.appScriptSync || {}),
+    endpoint: priorSync.endpoint || DEFAULT_APPS_SCRIPT_ENDPOINT,
+    trackerCode: data.code || code,
+    trackerName: data.name || priorSync.trackerName,
+    pin: "",
+    adminPin,
+    adminMode: true,
+    autoPush: true,
+    lastPulledAt: new Date().toISOString(),
+    remoteUpdatedAt: data.updatedAt || "",
+  };
+  suppressAppScriptAutoPush = true;
+  saveState();
+  suppressAppScriptAutoPush = false;
+  renderAll();
+  setAppScriptSyncStatus("Tracker opened with admin access.", "Connected");
 }
 
 async function tryRememberedAppScriptLogin() {
@@ -903,13 +947,19 @@ async function tryRememberedAppScriptLogin() {
 
 async function pushAppScriptTracker(options = {}) {
   const sync = appScriptSyncSettings();
-  if (!sync.trackerCode || !sync.pin || !sync.endpoint) throw new Error("Add the tracker code, PIN, and Apps Script URL first.");
+  if (!sync.trackerCode || !sync.endpoint) throw new Error("Add the tracker code and Apps Script URL first.");
+  if (sync.adminMode) {
+    if (!sync.adminPin) throw new Error("Admin access needs the admin code.");
+  } else if (!sync.pin) {
+    throw new Error("Add the tracker PIN first.");
+  }
   appScriptSyncInFlight = true;
   try {
-    setAppScriptSyncStatus("Pushing tracker by code...", "Working");
-    const data = await appScriptRequest("push", {
+    setAppScriptSyncStatus(sync.adminMode ? "Pushing tracker with admin access..." : "Pushing tracker by code...", "Working");
+    const data = await appScriptRequest(sync.adminMode ? "adminpush" : "push", {
       code: sync.trackerCode,
       pin: sync.pin,
+      adminPin: sync.adminPin,
       payload: trackerPayloadObject(),
     });
     sync.trackerCode = data.code || sync.trackerCode;
@@ -929,7 +979,9 @@ async function pushAppScriptTracker(options = {}) {
 function scheduleAppScriptAutoPush() {
   if (suppressAppScriptAutoPush || appScriptSyncInFlight) return;
   const sync = appScriptSyncSettings();
-  if (sync.autoPush === false || !sync.endpoint || !sync.trackerCode || !sync.pin) return;
+  const canPushByCode = Boolean(sync.endpoint && sync.trackerCode && sync.pin);
+  const canPushByAdmin = Boolean(sync.endpoint && sync.trackerCode && sync.adminMode && sync.adminPin);
+  if (sync.autoPush === false || (!canPushByCode && !canPushByAdmin)) return;
   clearTimeout(appScriptAutoPushTimer);
   appScriptAutoPushTimer = setTimeout(() => {
     pushAppScriptTracker({ auto: true }).catch((error) => setAppScriptSyncStatus(`Code sync skipped: ${error.message}`, "Needs review"));
@@ -945,6 +997,7 @@ function renderAppScriptTrackerList(trackers = []) {
         <button class="drive-file-option" data-app-script-tracker-code="${escapeAttr(tracker.code)}" type="button">
           <strong>${escapeHtml(tracker.name || "Unit tracker")}</strong>
           <span>${escapeHtml(tracker.code)} - Updated ${escapeHtml(formatDateTime(tracker.updatedAt))}</span>
+          <span>Open and edit with admin access</span>
         </button>
       `).join("")}
     </div>
@@ -955,6 +1008,8 @@ async function listAppScriptTrackers() {
   saveAppScriptSyncSettingsFromForm("data");
   const adminPin = $("#appScriptAdminPin")?.value.trim() || "";
   if (!adminPin) throw new Error("Enter the admin code first.");
+  const sync = appScriptSyncSettings();
+  sync.adminPin = adminPin;
   setAppScriptSyncStatus("Listing all tracker codes...", "Working");
   const data = await appScriptRequest("list", { adminPin });
   renderAppScriptTrackerList(data.trackers || []);
@@ -5460,7 +5515,7 @@ $("#appScriptCreateTracker")?.addEventListener("click", async () => {
   }
 });
 
-["#appScriptEndpoint", "#appScriptTrackerCode", "#appScriptPin", "#appScriptTrackerName", "#appScriptAutoPush"].forEach((selector) => {
+["#appScriptEndpoint", "#appScriptTrackerCode", "#appScriptPin", "#appScriptTrackerName", "#appScriptAdminPin", "#appScriptAutoPush"].forEach((selector) => {
   $(selector)?.addEventListener("change", () => saveAppScriptSyncSettingsFromForm("data"));
 });
 
@@ -5493,12 +5548,20 @@ $("#appScriptListTrackers")?.addEventListener("click", async () => {
   }
 });
 
-$("#appScriptTrackerList")?.addEventListener("click", (event) => {
+$("#appScriptTrackerList")?.addEventListener("click", async (event) => {
   const tracker = event.target.closest("[data-app-script-tracker-code]");
   if (!tracker) return;
-  $("#appScriptTrackerCode").value = tracker.dataset.appScriptTrackerCode || "";
-  saveAppScriptSyncSettingsFromForm("data");
-  showToast("Tracker code selected.");
+  try {
+    const code = tracker.dataset.appScriptTrackerCode || "";
+    const adminPin = $("#appScriptAdminPin")?.value.trim() || appScriptSyncSettings().adminPin || "";
+    $("#appScriptTrackerCode").value = code;
+    await adminOpenAppScriptTracker(code, adminPin);
+    switchTab("planning");
+    showToast("Tracker opened with admin access.");
+  } catch (error) {
+    setAppScriptSyncStatus(`Admin open failed: ${error.message}`, "Needs setup");
+    showToast("Could not open tracker with admin access.");
+  }
 });
 
 $("#driveOpenPicker")?.addEventListener("click", async () => {
