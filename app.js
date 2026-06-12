@@ -13,14 +13,14 @@ let driveTokenClient = null;
 let driveAccessToken = "";
 let driveTokenExpiresAt = 0;
 let driveAutoPushTimer = null;
-let suppressDriveAutoPush = false;
+let suppressDriveAutoPush = true;
 let driveSyncInFlight = false;
 let driveSyncHydrated = false;
 let driveTrackerFiles = [];
 let googlePickerReady = false;
 let appScriptSyncInFlight = false;
 let appScriptAutoPushTimer = null;
-let suppressAppScriptAutoPush = false;
+let suppressAppScriptAutoPush = true;
 
 const slug = (text) =>
   String(text)
@@ -538,13 +538,15 @@ if (!state.kids.length) {
   saveState();
 }
 if (!state.settings.badgeProgressResetDone) {
-  clearBadgeProgressKeepAttendance();
+  state.settings.badgeProgressResetDone = true;
   saveState();
 }
 if (!(state.attendanceRecords || []).length) {
   loadExcelAttendanceIntoState();
   saveState();
 }
+suppressDriveAutoPush = false;
+suppressAppScriptAutoPush = false;
 
 function loadState() {
   const saved = localStorage.getItem(STORE_KEY);
@@ -5755,7 +5757,8 @@ if ("ResizeObserver" in window) {
 
 renderAll();
 resetChatMessages();
-(async () => {
-  const loadedByCode = await tryRememberedAppScriptLogin();
-  if (!loadedByCode) setAppScriptSyncStatus("Enter a tracker code and PIN to open a unit tracker.");
-})();
+if (appScriptSyncSettings().trackerCode && appScriptSyncSettings().pin) {
+  setAppScriptSyncStatus("Remembered tracker code and PIN. Click Open tracker to load the latest saved version.");
+} else {
+  setAppScriptSyncStatus("Enter a tracker code and PIN to open a unit tracker.");
+}
