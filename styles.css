@@ -392,6 +392,16 @@ body.login-mode main {
   border-color: #b9d9e9;
 }
 
+.badge-confirm-switch {
+  min-height: 38px;
+  align-items: center;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+  white-space: nowrap;
+}
+
 .attendance-panel {
   display: none;
 }
@@ -1352,12 +1362,12 @@ textarea {
 .badge-matrix td {
   color: var(--muted);
   font-weight: 850;
-  background: color-mix(in srgb, var(--category-fill, white) 18%, white);
+  background: #fff;
 }
 
 .badge-matrix td.is-progress {
   color: color-mix(in srgb, var(--category-accent, #8a5b00) 72%, #624900);
-  background: color-mix(in srgb, var(--category-fill, #fff5d6) 54%, #fff8df);
+  background: #fff;
 }
 
 .badge-matrix td.is-earned {
@@ -1368,6 +1378,10 @@ textarea {
 .badge-matrix td.program-area-col,
 .badge-matrix th.program-area-col {
   background: color-mix(in srgb, var(--category-fill, #edf7fb) 72%, white);
+}
+
+.badge-matrix td.program-area-col {
+  background: #fff;
 }
 
 .badge-matrix td.program-area-col.is-earned {
@@ -1381,7 +1395,7 @@ textarea {
 
 .badge-matrix td.summary-empty-cell {
   color: #9aa8b4;
-  background: color-mix(in srgb, var(--category-fill, white) 8%, white);
+  background: #fff;
 }
 
 .patrol-points-wrap {
@@ -1453,6 +1467,27 @@ textarea {
 .matrix-count-editor.is-manual input {
   border-color: var(--category-accent, var(--guide-blue-dark));
   background: #fff;
+}
+
+.matrix-count-editor.is-pending {
+  display: inline-grid;
+  grid-template-columns: auto auto;
+  color: var(--ember-orange);
+}
+
+.badge-confirm-row {
+  grid-column: 1 / -1;
+  display: inline-flex;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.badge-confirm-row .primary-button,
+.badge-confirm-row .text-button {
+  min-height: 30px;
+  padding: 6px 9px;
+  font-size: 0.72rem;
 }
 
 .matrix-earned-label {

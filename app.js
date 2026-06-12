@@ -152,6 +152,7 @@ function buildEmptyData() {
     cookieTracker: { rows: {}, orders: [], grocery: {} },
     settings: {
       rosterChecked: false,
+      badgeEditConfirmation: true,
       badgeProgressResetDone: false,
       driveSync: { clientId: "", apiKey: "", appId: "", folderId: "", folderName: DRIVE_SYNC_FOLDER_NAME, fileId: "", fileName: DRIVE_SYNC_FILE_NAME, autoPull: true, autoPush: true, remoteModifiedTime: "", lastPulledAt: "", lastPushedAt: "", webViewLink: "" },
       appScriptSync: { endpoint: DEFAULT_APPS_SCRIPT_ENDPOINT, trackerCode: "", trackerName: "", pin: "", autoPush: true, lastPulledAt: "", lastPushedAt: "", remoteUpdatedAt: "" },
@@ -3614,6 +3615,11 @@ function renderKidBadgeModeControls() {
   $("#kidBadgeProgressToggle")?.classList.toggle("is-active", kidBadgeMode === "progress");
   $("#kidBadgeSummaryToggle")?.classList.toggle("is-active", kidBadgeMode === "summary");
   $("#kidBadgeHandoutToggle")?.classList.toggle("is-active", kidBadgeMode === "handouts");
+  if ($("#kidBadgeConfirmationToggle")) $("#kidBadgeConfirmationToggle").checked = badgeEditConfirmationEnabled();
+}
+
+function badgeEditConfirmationEnabled() {
+  return state.settings?.badgeEditConfirmation !== false;
 }
 
 function visibleKidBadgeRows() {
@@ -5090,6 +5096,12 @@ $("#kidBadgeHandoutToggle").addEventListener("click", () => {
   kidBadgeMode = "handouts";
   renderKidBadgesKeepingPosition();
 });
+$("#kidBadgeConfirmationToggle")?.addEventListener("change", (event) => {
+  state.settings.badgeEditConfirmation = event.target.checked;
+  saveState();
+  renderKidBadgesKeepingPosition();
+  showToast(event.target.checked ? "Badge confirmations turned on." : "Badge confirmations turned off.");
+});
 
 function handleManualBadgeEdit(event, options = {}) {
   const input = event.target.closest("[data-manual-kid-id][data-manual-badge-id]");
@@ -5100,9 +5112,31 @@ function handleManualBadgeEdit(event, options = {}) {
   return true;
 }
 
+function handleManualBadgeConfirmationRequest(event) {
+  const input = event.target.closest("[data-manual-kid-id][data-manual-badge-id]");
+  if (!input) return false;
+  const editor = input.closest(".matrix-count-editor");
+  editor?.querySelector(".badge-confirm-row")?.remove();
+  const confirmRow = document.createElement("span");
+  confirmRow.className = "badge-confirm-row";
+  confirmRow.innerHTML = `
+    <button class="primary-button" data-confirm-manual-badge data-confirm-kid-id="${escapeAttr(input.dataset.manualKidId)}" data-confirm-badge-id="${escapeAttr(input.dataset.manualBadgeId)}" data-confirm-count="${escapeAttr(input.value)}" type="button">Confirm</button>
+    <button class="text-button" data-cancel-manual-badge type="button">Cancel</button>
+  `;
+  editor?.append(confirmRow);
+  editor?.classList.add("is-pending");
+  return true;
+}
+
 function handleBadgeHandoutEdit(event, options = {}) {
   const input = event.target.closest("[data-handout-kid-id][data-handout-badge-id]");
   if (!input) return false;
+  if (!badgeEditConfirmationEnabled()) {
+    setBadgeHandedOut(input.dataset.handoutKidId, input.dataset.handoutBadgeId, input.checked);
+    saveState();
+    if (options.render) renderKidBadgesKeepingPosition();
+    return true;
+  }
   const current = badgeHandedOut(input.dataset.handoutKidId, input.dataset.handoutBadgeId);
   input.closest(".handout-check")?.querySelector(".handout-confirm-row")?.remove();
   const confirmRow = document.createElement("span");
@@ -5118,15 +5152,34 @@ function handleBadgeHandoutEdit(event, options = {}) {
 
 $("#kidBadgeCards").addEventListener("change", (event) => {
   if (handleBadgeHandoutEdit(event, { render: true })) {
-    showToast("Confirm the badge handout change.");
+    showToast(badgeEditConfirmationEnabled() ? "Confirm the badge handout change." : "Badge handout updated.");
+    return;
+  }
+  if (badgeEditConfirmationEnabled() && handleManualBadgeConfirmationRequest(event)) {
+    showToast("Confirm the badge progress change.");
     return;
   }
   if (handleManualBadgeEdit(event, { render: true })) showToast("Badge progress corrected.");
 });
 
-$("#kidBadgeCards").addEventListener("input", handleManualBadgeEdit);
+$("#kidBadgeCards").addEventListener("input", (event) => {
+  if (!badgeEditConfirmationEnabled()) handleManualBadgeEdit(event);
+});
 
 $("#kidBadgeCards").addEventListener("click", (event) => {
+  const manualConfirm = event.target.closest("[data-confirm-manual-badge]");
+  if (manualConfirm) {
+    setManualBadgeCount(manualConfirm.dataset.confirmKidId, manualConfirm.dataset.confirmBadgeId, manualConfirm.dataset.confirmCount);
+    saveState();
+    renderKidBadgesKeepingPosition();
+    showToast("Badge progress corrected.");
+    return;
+  }
+  if (event.target.closest("[data-cancel-manual-badge]")) {
+    renderKidBadgesKeepingPosition();
+    showToast("Badge progress change cancelled.");
+    return;
+  }
   const confirm = event.target.closest("[data-confirm-handout]");
   if (confirm) {
     setBadgeHandedOut(confirm.dataset.confirmKidId, confirm.dataset.confirmBadgeId, confirm.dataset.confirmHandout === "yes");
