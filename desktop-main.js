@@ -37,6 +37,17 @@ function setLauncherStatus(win, message) {
   `).catch(() => {});
 }
 
+async function showManualUpdateMessage(win, message, detail = "") {
+  if (!win || win.isDestroyed()) return;
+  await dialog.showMessageBox(win, {
+    type: "info",
+    buttons: ["OK"],
+    title: "Update check",
+    message,
+    detail,
+  });
+}
+
 async function downloadReleaseAsset(asset) {
   const response = await fetch(asset.browser_download_url, {
     headers: { "User-Agent": "Embers-Tracker-Updater" },
@@ -57,6 +68,7 @@ async function checkForUpdates(win, { manual = false } = {}) {
     });
     if (response.status === 404) {
       setLauncherStatus(win, manual ? "No GitHub release has been published yet." : "Ready.");
+      if (manual) await showManualUpdateMessage(win, "No update release was found.");
       return;
     }
     if (!response.ok) throw new Error(`GitHub returned status ${response.status}.`);
@@ -64,11 +76,25 @@ async function checkForUpdates(win, { manual = false } = {}) {
     const latestVersion = String(release.tag_name || "").replace(/^v/i, "");
     if (!latestVersion || compareVersions(latestVersion, app.getVersion()) <= 0) {
       setLauncherStatus(win, manual ? "You already have the latest version." : "Ready.");
+      if (manual) {
+        await showManualUpdateMessage(
+          win,
+          "You already have the latest version.",
+          `Installed version: ${app.getVersion()}\nLatest release: ${latestVersion || "unknown"}`
+        );
+      }
       return;
     }
     const asset = installerAssetForPlatform(release);
     if (!asset) {
       setLauncherStatus(win, `Version ${latestVersion} is available, but no installer was attached.`);
+      if (manual) {
+        await showManualUpdateMessage(
+          win,
+          `Version ${latestVersion} is available, but no installer was attached.`,
+          "The GitHub release exists, but this computer needs an installer asset for its platform."
+        );
+      }
       return;
     }
     const choice = await dialog.showMessageBox(win, {
@@ -92,6 +118,9 @@ async function checkForUpdates(win, { manual = false } = {}) {
     app.quit();
   } catch (error) {
     setLauncherStatus(win, manual ? `Update check failed: ${error.message}` : "Ready.");
+    if (manual) {
+      await showManualUpdateMessage(win, "Update check failed.", error.message || "Unknown error.");
+    }
   }
 }
 
@@ -168,6 +197,8 @@ function createWindow() {
             location.href = "embextra://open";
           });
           document.getElementById("update").addEventListener("click", () => {
+            const status = document.getElementById("status");
+            if (status) status.textContent = "Checking for updates...";
             location.href = "embextra://update";
           });
         </script>
