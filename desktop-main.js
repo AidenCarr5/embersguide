@@ -1,6 +1,4 @@
 const path = require("node:path");
-const fs = require("node:fs/promises");
-const os = require("node:os");
 const { app, BrowserWindow, dialog, shell } = require("electron");
 
 process.env.PORT = process.env.PORT || "8767";
@@ -48,17 +46,6 @@ async function showManualUpdateMessage(win, message, detail = "") {
   });
 }
 
-async function downloadReleaseAsset(asset) {
-  const response = await fetch(asset.browser_download_url, {
-    headers: { "User-Agent": "Embers-Tracker-Updater" },
-  });
-  if (!response.ok) throw new Error(`Download failed with status ${response.status}.`);
-  const bytes = Buffer.from(await response.arrayBuffer());
-  const destination = path.join(os.tmpdir(), asset.name || `Embers-Tracker-Update-${Date.now()}`);
-  await fs.writeFile(destination, bytes);
-  return destination;
-}
-
 async function checkForUpdates(win, { manual = false } = {}) {
   if (!app.isPackaged && !manual) return;
   try {
@@ -104,18 +91,16 @@ async function checkForUpdates(win, { manual = false } = {}) {
       cancelId: 1,
       title: "Update available",
       message: `Embers Tracker ${latestVersion} is available.`,
-      detail: "Download the newest installer now? The tracker data is stored in your unit tracker, so updating the app will not erase it.",
+      detail: "Download the newest installer in your web browser? The tracker data is stored in your unit tracker, so updating the app will not erase it.",
     });
     if (choice.response !== 0) {
       setLauncherStatus(win, "Update skipped for now.");
       return;
     }
-    setLauncherStatus(win, `Downloading ${asset.name}...`);
-    const installerPath = await downloadReleaseAsset(asset);
-    setLauncherStatus(win, "Opening installer...");
-    const openError = await shell.openPath(installerPath);
+    setLauncherStatus(win, "Opening download in your browser...");
+    const openError = await shell.openExternal(asset.browser_download_url);
     if (openError) throw new Error(openError);
-    app.quit();
+    setLauncherStatus(win, `Download opened for ${asset.name}. Run the installer after it finishes downloading.`);
   } catch (error) {
     setLauncherStatus(win, manual ? `Update check failed: ${error.message}` : "Ready.");
     if (manual) {
