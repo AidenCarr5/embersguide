@@ -34,12 +34,14 @@ const uid = (prefix = "id") =>
 
 const today = () => new Date().toISOString().slice(0, 10);
 
-function makeBadge(id, area, name, requiredCount, requirementTitles) {
+function makeBadge(id, area, name, requiredCount, requirementTitles, options = {}) {
   return {
     id,
     area,
     name,
     requiredCount,
+    imageUrl: options.imageUrl || "",
+    progressMode: options.progressMode === "criteria" ? "criteria" : "events",
     requirements: requirementTitles.map((title) => ({
       id: `${id}-${slug(title)}`,
       title,
@@ -51,7 +53,88 @@ function meetingCreditTitles(count) {
   return Array.from({ length: count }, (_, index) => `Meeting credit ${index + 1}`);
 }
 
-function officialSiteBadges() {
+const BRANCHES = {
+  sparks: { singular: "Spark", plural: "Sparks", productPrefix: "SPARK" },
+  embers: { singular: "Ember", plural: "Embers", productPrefix: "EMBERS" },
+  guides: { singular: "Guide", plural: "Guides", productPrefix: "GUIDE" },
+  pathfinders: { singular: "Pathfinder", plural: "Pathfinders", productPrefix: "PATHFINDER" },
+  rangers: { singular: "Ranger", plural: "Rangers", productPrefix: "RANGER" },
+};
+
+const DEFAULT_BRANCH = "embers";
+
+function branchValue(value) {
+  const key = String(value || "").trim().toLowerCase();
+  return BRANCHES[key] ? key : DEFAULT_BRANCH;
+}
+
+function currentBranchKey() {
+  try {
+    return branchValue(state?.settings?.branch);
+  } catch {
+    return DEFAULT_BRANCH;
+  }
+}
+
+function currentBranch() {
+  return BRANCHES[currentBranchKey()];
+}
+
+function branchSingular() {
+  return currentBranch().singular;
+}
+
+function branchPlural() {
+  return currentBranch().plural;
+}
+
+const branchTextOriginals = new WeakMap();
+const branchAttributeOriginals = new WeakMap();
+
+function branchCopyText(text) {
+  const singular = branchSingular();
+  const plural = branchPlural();
+  return String(text || "")
+    .replace(/\bEmbers\b/g, plural)
+    .replace(/\bEmber\b/g, singular)
+    .replace(/\bembers\b/g, plural.toLowerCase())
+    .replace(/\bember\b/g, singular.toLowerCase());
+}
+
+function shouldSkipBranchTextNode(node) {
+  const parent = node.parentElement;
+  if (!parent) return true;
+  return Boolean(parent.closest("script, style, option, select, input, textarea, #appTitle, #loginAppTitle, #notes, .guides-logo-img"));
+}
+
+function renderBranchCopy() {
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  const textNodes = [];
+  while (walker.nextNode()) textNodes.push(walker.currentNode);
+  textNodes.forEach((node) => {
+    if (shouldSkipBranchTextNode(node)) return;
+    if (!branchTextOriginals.has(node)) branchTextOriginals.set(node, node.nodeValue);
+    const original = branchTextOriginals.get(node);
+    if (/\bEmbers?\b/i.test(original)) node.nodeValue = branchCopyText(original);
+  });
+
+  $$("[placeholder], [aria-label]").forEach((element) => {
+    if (element.closest("#appTitle, #loginAppTitle, .guides-logo-img")) return;
+    ["placeholder", "aria-label"].forEach((attr) => {
+      const value = element.getAttribute(attr);
+      if (!value || !/\bEmbers?\b/i.test(value)) return;
+      let originals = branchAttributeOriginals.get(element);
+      if (!originals) {
+        originals = {};
+        branchAttributeOriginals.set(element, originals);
+      }
+      originals[attr] = originals[attr] || value;
+      element.setAttribute(attr, branchCopyText(originals[attr]));
+    });
+  });
+}
+
+function embersOfficialSiteBadges() {
   const themeRows = [
     ["Be Well", "My Healthy Relationships"],
     ["Be Well", "My Mighty Mind"],
@@ -116,6 +199,90 @@ function officialSiteBadges() {
   );
 }
 
+const PROGRAM_AREAS = [
+  "Be Well",
+  "Build Skills",
+  "Connect and Question",
+  "Experiment and Create",
+  "Explore Identities",
+  "Guide Together",
+  "Into the Outdoors",
+  "Take Action",
+];
+
+function titleCaseBadgeName(value) {
+  return String(value || "")
+    .replace(/MY HEATHY/gi, "MY HEALTHY")
+    .replace(/\bAND\b/gi, "and")
+    .replace(/\s*-\s*/g, " - ")
+    .toLowerCase()
+    .replace(/\b[a-z]/g, (letter) => letter.toUpperCase())
+    .replace(/\bAnd\b/g, "and")
+    .replace(/Camp Award - /i, "")
+    .replace(/Camping Skills and Adventure$/i, "Camping Skills & Adventures")
+    .replace(/Camping Skills and Adventures$/i, "Camping Skills & Adventures")
+    .trim();
+}
+
+function normalizeStoreTitle(productTitle, branchKey) {
+  const prefix = BRANCHES[branchKey]?.productPrefix || "";
+  let title = String(productTitle || "")
+    .replace(new RegExp(`^\\d*GF-${prefix}-`, "i"), "")
+    .replace(new RegExp(`^GF-${prefix}-`, "i"), "")
+    .replace(/--+/g, "-")
+    .replace(/:$/g, "")
+    .trim();
+
+  if (/^DISCOVERY BADGE-/i.test(title)) {
+    return { area: "Discovery Badges", name: titleCaseBadgeName(title.replace(/^DISCOVERY BADGE-/i, "")), requiredCount: 1 };
+  }
+  if (/^CAMP AWARD-/i.test(title)) {
+    return { area: "Camp Awards", name: titleCaseBadgeName(title.replace(/^CAMP AWARD-/i, "")), requiredCount: 1 };
+  }
+
+  for (const area of PROGRAM_AREAS) {
+    const areaKey = area.toUpperCase();
+    if (title.toUpperCase() === areaKey) return { area, name: area, requiredCount: 2, requirementTitles: [] };
+    if (title.toUpperCase().startsWith(`${areaKey}-`)) {
+      return { area, name: titleCaseBadgeName(title.slice(areaKey.length + 1)), requiredCount: 5 };
+    }
+  }
+
+  return { area: "Insignia & Awards", name: titleCaseBadgeName(title), requiredCount: 1 };
+}
+
+function branchCatalogProducts(branchKey) {
+  return (window.BRANCH_BADGE_PRODUCTS && Array.isArray(window.BRANCH_BADGE_PRODUCTS[branchKey]))
+    ? window.BRANCH_BADGE_PRODUCTS[branchKey]
+    : [];
+}
+
+function branchOfficialSiteBadges(branchKey) {
+  if (branchKey === "embers") return embersOfficialSiteBadges();
+  const badgeRows = branchCatalogProducts(branchKey).map((product) => {
+    const badge = normalizeStoreTitle(product.title, branchKey);
+    return { ...badge, imageUrl: product.image || "" };
+  });
+  const themeRows = badgeRows.filter((badge) => PROGRAM_AREAS.includes(badge.area) && badge.name !== badge.area);
+  return badgeRows.map((badge) => {
+    const requirementTitles = badge.name === badge.area
+      ? themeRows.filter((theme) => theme.area === badge.area).map((theme) => theme.name)
+      : meetingCreditTitles(badge.requiredCount);
+    return makeBadge(
+      `site-${branchKey}-${officialBadgeKey(badge.name)}`,
+      badge.area,
+      badge.name,
+      badge.requiredCount,
+      badge.requirementTitles?.length ? badge.requirementTitles : requirementTitles,
+      { imageUrl: badge.imageUrl }
+    );
+  });
+}
+
+function officialSiteBadges(branchKey = currentBranchKey()) {
+  return branchOfficialSiteBadges(branchValue(branchKey));
+}
+
 function officialBadgeByName() {
   return new Map(officialSiteBadges().map((badge) => [badge.name.trim().toLowerCase(), badge]));
 }
@@ -124,9 +291,9 @@ function isCustomBadge(badge) {
   return String(badge?.id || "").startsWith("custom-");
 }
 
-function officialBadgesWithSavedCriteria(previousBadges = []) {
+function officialBadgesWithSavedCriteria(previousBadges = [], branchKey = currentBranchKey()) {
   const savedById = new Map(previousBadges.filter((badge) => String(badge.id || "").startsWith("site-")).map((badge) => [badge.id, badge]));
-  return officialSiteBadges().map((badge) => {
+  return officialSiteBadges(branchKey).map((badge) => {
     const saved = savedById.get(badge.id);
     if (!saved || isProgramAreaBadge(badge)) return badge;
     return {
@@ -137,21 +304,24 @@ function officialBadgesWithSavedCriteria(previousBadges = []) {
   });
 }
 
-function buildEmptyData() {
+function buildEmptyData(branchKey = DEFAULT_BRANCH) {
+  const branch = branchValue(branchKey);
   return {
     kids: [],
-    badges: officialSiteBadges(),
+    badges: officialSiteBadges(branch),
     meetings: [],
     baselineCredits: [],
     manualBadgeAdjustments: {},
+    manualCriteriaSelections: {},
     badgeHandouts: {},
     attendanceRecords: [],
     scheduledEvents: [],
     weeklyPlans: [],
+    notes: [],
     patrolPointSpending: [],
     cookieTracker: { rows: {}, orders: [], grocery: {} },
     settings: {
-      rosterChecked: false,
+      branch,
       badgeEditConfirmation: true,
       badgeProgressResetDone: false,
       driveSync: { clientId: "", apiKey: "", appId: "", folderId: "", folderName: DRIVE_SYNC_FOLDER_NAME, fileId: "", fileName: DRIVE_SYNC_FILE_NAME, autoPull: true, autoPush: true, remoteModifiedTime: "", lastPulledAt: "", lastPushedAt: "", webViewLink: "" },
@@ -159,294 +329,6 @@ function buildEmptyData() {
     },
     createdAt: new Date().toISOString(),
   };
-}
-
-function excelRosterKids() {
-  return [
-    ["Mackenzie", "Elves"],
-    ["Molly G.", "Fairies"],
-    ["Maddy", "Lares"],
-    ["Eleanor", "Elves"],
-    ["Malia", "Lares"],
-    ["Rylie", "Fairies"],
-    ["Arya", "Sprites"],
-    ["Bridget", "Fairies"],
-    ["Alexis", "Sprites"],
-    ["Everly", "Elves"],
-    ["Adelaide", "Lares"],
-    ["Nora", "Sprites"],
-    ["Molly S.", "Sprites"],
-    ["Eloise", "Elves"],
-    ["Bailey", "Fairies"],
-    ["Kaye", "Lares"],
-  ].map(([name, patrol]) => ({
-    id: `kid-${slug(name)}`,
-    name,
-    patrol,
-    year: "",
-    membershipYear: "",
-    leadership: "none",
-    returningStatus: "",
-  }));
-}
-
-function loadExcelRosterIntoState({ replace = false } = {}) {
-  const existingByName = new Map(state.kids.map((kid) => [kid.name.trim().toLowerCase(), kid]));
-  const imported = excelRosterKids();
-  if (replace || !state.kids.length) {
-    state.kids = imported;
-  } else {
-    imported.forEach((kid) => {
-      const existing = existingByName.get(kid.name.trim().toLowerCase());
-      if (existing) {
-        existing.patrol = existing.patrol || kid.patrol;
-      } else {
-        state.kids.push(kid);
-      }
-    });
-  }
-  state.settings.rosterChecked = true;
-}
-
-function starterCriteriaBadges() {
-  return [
-    makeBadge("criteria-membership-pin", "Program Badges", "Membership Pin", 1, ["Membership year confirmed"]),
-    makeBadge("criteria-patrol-leader", "Program Badges", "Patrol Leader", 1, ["Served as patrol leader"]),
-    makeBadge("criteria-patrol-second", "Program Badges", "Patrol Second", 1, ["Served as patrol second"]),
-    makeBadge("criteria-global-guiding", "Guide Together", "Global Guiding", 5, [
-      "Window to your world",
-      "WAGGGS friendship bracelets",
-      "Pen pal letters",
-      "World Thinking Day activity",
-      "Global guiding discussion",
-    ]),
-    makeBadge("criteria-our-story", "Guide Together", "Our Story", 7, [
-      "Promise colouring sheets",
-      "Discover your program",
-      "Ember circles and Ember story",
-      "Get to know discovery badges",
-      "Cookie do's and don'ts",
-      "Made of cookies",
-      "Cookie posters",
-      "Safety stack",
-      "Lights, camera, cookies",
-      "Ember openings",
-      "Cookie sales",
-    ]),
-    makeBadge("criteria-spirit-guiding", "Guide Together", "Spirit of Guiding", 4, [
-      "Name catch",
-      "Ember song",
-      "Cookie jar name game",
-      "SWAP crafts",
-      "Patrol point system",
-    ]),
-    makeBadge("criteria-canadian-connections", "Connect and Question", "Canadian Connections", 4, [
-      "What does a politician do",
-      "Majority rules",
-      "Ration recipes",
-      "Wartime women",
-      "Girl Guides and the war",
-      "Heroes and sacrifice",
-      "Sending remembrance",
-    ]),
-    makeBadge("criteria-world-stage", "Connect and Question", "World Stage", 4, [
-      "Spread the peace",
-      "Cooperative musical chairs",
-      "Is it your right",
-      "Do the right thing",
-      "Path to school",
-      "Shining rights",
-    ]),
-    makeBadge("criteria-local-communities", "Connect and Question", "Local Communities", 3, [
-      "Dragon map quest",
-      "Dream neighbourhood",
-      "Trash and cash geocaching",
-    ]),
-    makeBadge("criteria-your-voice", "Take Action", "Your Voice", 4, ["Pass the squeeze", "Pen pals", "Friendship talk", "Group discussion"]),
-    makeBadge("criteria-your-choice", "Take Action", "Your Choice", 4, ["Would you rather", "We care together tag", "I care I help", "Ignite activity"]),
-    makeBadge("criteria-your-action", "Take Action", "Your Action", 2, ["Second year action", "Bird feeders", "Decorate pots and plant flowers"]),
-    makeBadge("criteria-my-healthy-relationships", "Be Well", "My Healthy Relationships", 4, ["Find a friend", "Friendship chain", "Spin a new tale", "Make new friends", "Build-a-fort reflection"]),
-    makeBadge("criteria-my-physical-self", "Be Well", "My Physical Self", 4, ["Taste rainbow", "Dance party", "Martial arts", "Keep away virus", "Listening to your body", "Coach says", "Germ experiment", "30 day challenge"]),
-    makeBadge("criteria-my-mighty-mind", "Be Well", "My Mighty Mind", 4, ["Colour your way to can", "Same game, new rules", "Power dice", "Mindset mingle", "Problem solving mindset", "Building blocks of health", "Slime night"]),
-    makeBadge("criteria-gender-power", "Explore Identities", "Gender Power", 4, ["Making it easier", "Kickoff", "Raise your voice", "Support for the court", "Good game"]),
-    makeBadge("criteria-different-together", "Explore Identities", "Different Together", 3, ["Welcome to our group", "Move if", "Friendship circles", "Painting with eyes closed"]),
-    makeBadge("criteria-being-you", "Explore Identities", "Being You", 4, ["Look what I can do", "Happy unbirthday", "In the corners", "Kusafiri conversation"]),
-    makeBadge("criteria-money-sense", "Build Skills", "Money Sense", 4, ["Online shopping shuffle", "Order these items", "Coin creature", "Girls count bingo"]),
-    makeBadge("criteria-life-stuff", "Build Skills", "Life Stuff", 3, ["A leader is", "Moving forward", "Get the ball rolling", "Dragon council and treasures"]),
-    makeBadge("criteria-how-to", "Build Skills", "How To", 3, ["Postcard making", "Right light left light", "Pizza night", "Lets line up"]),
-    makeBadge("criteria-science-lab", "Experiment and Create", "Science Lab", 4, ["Colourful milk", "Antibody sickness game", "Fizzy art", "Baking soda and vinegar", "Science colouring sheet"]),
-    makeBadge("criteria-design-space", "Experiment and Create", "Design Space", 3, ["Build a fort", "Art fair structure", "Engineering quicksand escape"]),
-    makeBadge("criteria-art-studio", "Experiment and Create", "Art Studio", 3, ["Postcard story", "Build a dragon SWAP", "Our story your play", "What is it", "Art fair craft"]),
-    makeBadge("criteria-nature-discoveries", "Into the Outdoors", "Nature Discoveries", 3, ["Winter bird feeders", "Beaded snowflakes", "What pollinator are you", "Bee video", "Sleeping bear"]),
-    makeBadge("criteria-our-shared-planet", "Into the Outdoors", "Our Shared Planet", 3, ["Walk to park", "Point Pelee", "Community nature care"]),
-    makeBadge("criteria-camping-skills-adventures", "Into the Outdoors", "Camping Skills & Adventures", 3, ["Fire activity", "Sit upons", "Going camper", "Roast marshmallow", "Hike"]),
-  ];
-}
-
-function criteriaBadgeForProgress(info) {
-  const normalized = info.name.trim().toLowerCase();
-  return starterCriteriaBadges().find((badge) => badge.name.trim().toLowerCase() === normalized);
-}
-
-function makeExcelProgressBadge(info) {
-  const requiredCount = Math.max(1, Number(info.requiredCount) || 1);
-  const criteriaBadge = criteriaBadgeForProgress(info);
-  if (criteriaBadge) return { ...criteriaBadge, requiredCount };
-  return makeBadge(info.id, info.area, info.name, requiredCount, Array.from({ length: requiredCount }, (_, index) => `Excel starting credit ${index + 1}`));
-}
-
-function loadExcelProgressIntoState() {
-  const progressData = Array.isArray(window.EXCEL_PROGRESS_DATA) ? window.EXCEL_PROGRESS_DATA : [];
-  loadExcelRosterIntoState();
-  state.badges = [...officialBadgesWithSavedCriteria(state.badges), ...state.badges.filter(isCustomBadge)];
-  state.baselineCredits = (state.baselineCredits || []).filter((credit) => credit.source !== "excel");
-
-  const kidsByName = new Map(state.kids.map((kid) => [kid.name.trim().toLowerCase(), kid]));
-  const officialByName = new Map(state.badges.map((badge) => [badge.name.trim().toLowerCase(), badge]));
-  progressData.forEach((info) => {
-    const badge = officialByName.get(info.name.trim().toLowerCase());
-    if (!badge) return;
-    Object.entries(info.entries || {}).forEach(([name, entry]) => {
-      const kid = kidsByName.get(name.trim().toLowerCase());
-      const count = Math.max(0, Math.min(Number(entry.count) || 0, badge.requirements.length));
-      if (!kid || count <= 0) return;
-      state.baselineCredits.push({
-        kidId: kid.id,
-        badgeId: badge.id,
-        requirementIds: badge.requirements.slice(0, count).map((requirement) => requirement.id),
-        note: entry.note || "",
-        source: "excel",
-      });
-    });
-  });
-  state.settings.rosterChecked = true;
-  state.settings.badgeProgressResetDone = true;
-}
-
-function loadExcelAttendanceIntoState() {
-  const attendanceData = Array.isArray(window.EXCEL_ATTENDANCE_DATA) ? window.EXCEL_ATTENDANCE_DATA : [];
-  loadExcelRosterIntoState();
-  const kidsByName = new Map(state.kids.map((kid) => [kid.name.trim().toLowerCase(), kid]));
-  state.attendanceRecords = attendanceData.map((record) => ({
-    id: record.id,
-    date: record.date || "",
-    title: record.title || "Meeting",
-    summary: record.summary || "",
-    source: "excel",
-    missingKidIds: (record.missingKids || [])
-      .map((name) => kidsByName.get(String(name).trim().toLowerCase())?.id)
-      .filter(Boolean),
-  }));
-  state.settings.rosterChecked = true;
-}
-
-function clearBadgeProgressKeepAttendance() {
-  state.baselineCredits = [];
-  state.manualBadgeAdjustments = {};
-  state.meetings = (state.meetings || []).map((meeting) => ({
-    ...meeting,
-    badgeIds: [],
-    requirementIds: [],
-  }));
-  state.attendanceRecords = (state.attendanceRecords || []).map((record) => ({
-    ...record,
-    badgeIds: [],
-    requirementIds: [],
-  }));
-  state.scheduledEvents = (state.scheduledEvents || []).map((event) => ({
-    ...event,
-    badgeIds: [],
-    requirementIds: [],
-  }));
-  state.settings.badgeProgressResetDone = true;
-}
-
-function buildDemoData() {
-  const kids = [
-    ["Ava", "Maples"],
-    ["Maya", "Maples"],
-    ["Sophie", "Stars"],
-    ["Harper", "Stars"],
-    ["Nora", "Rivers"],
-    ["Ella", "Rivers"],
-  ].map(([name, patrol]) => ({ id: `kid-${slug(name)}`, name, patrol }));
-
-  const badges = [
-    makeBadge("badge-our-story", "Guide Together", "Our Story", 7, [
-      "Promise colouring sheets",
-      "Discover your program",
-      "Ember circles and Ember story",
-      "Get to know discovery badges",
-      "Cookie do's and don'ts",
-      "Made of cookies",
-      "Cookie posters",
-      "Safety stack",
-      "Lights, camera, cookies",
-      "Ember openings",
-      "Cookie sales",
-    ]),
-    makeBadge("badge-spirit-guiding", "Guide Together", "Spirit of Guiding", 4, [
-      "Name catch",
-      "Ember song",
-      "Cookie jar name game",
-      "SWAP crafts",
-      "Patrol point system",
-    ]),
-    makeBadge("badge-world-stage", "Connect and Question", "World Stage", 4, [
-      "Spread the peace",
-      "Cooperative musical chairs",
-      "Is it your right",
-      "Do the right thing",
-      "Path to school",
-      "Shining rights",
-    ]),
-    makeBadge("badge-different-together", "Explore Identities", "Different Together", 3, [
-      "Welcome to our group",
-      "Move if",
-      "Friendship circles",
-      "Painting with eyes closed",
-    ]),
-    makeBadge("badge-gender-power", "Explore Identities", "Gender Power", 4, [
-      "Making it easier",
-      "Kickoff",
-      "Raise your voice",
-      "Support for the court",
-      "Good game",
-    ]),
-    makeBadge("badge-nature-discoveries", "Into the Outdoors", "Nature Discoveries", 3, [
-      "Observe plants or animals",
-      "Outdoor safety chat",
-      "Nature craft",
-      "Park or trail activity",
-    ]),
-    makeBadge("badge-team-builder", "Build Skills", "Team Builder", 3, [
-      "Name game",
-      "Group problem solving",
-      "Leadership role practice",
-      "Reflection circle",
-    ]),
-  ];
-
-  const req = (badgeId, title) => `${badgeId}-${slug(title)}`;
-
-  const meetings = [
-    {
-      id: "meeting-demo-welcome",
-      date: today(),
-      title: "Demo welcome meeting",
-      notes: "Example only. Replace this with your real meeting log.",
-      requirementIds: [
-        req("badge-our-story", "Promise colouring sheets"),
-        req("badge-our-story", "Ember openings"),
-        req("badge-spirit-guiding", "Name catch"),
-        req("badge-different-together", "Move if"),
-        req("badge-team-builder", "Name game"),
-      ],
-      presentKidIds: kids.map((kid) => kid.id),
-    },
-  ];
-
-  return { kids, badges, meetings, baselineCredits: [], attendanceRecords: [], scheduledEvents: [], weeklyPlans: [], patrolPointSpending: [], cookieTracker: { rows: {}, orders: [], grocery: {} }, settings: { rosterChecked: true }, createdAt: new Date().toISOString() };
 }
 
 const EMBER_YEAR_LABELS = {
@@ -464,12 +346,19 @@ function emberYearLabel(value) {
   return EMBER_YEAR_LABELS[emberYearValue(value)] || "No year set";
 }
 
-const MEMBERSHIP_YEAR_LABELS = {
-  "1": "1st year",
-  "2": "2nd year",
-  "3": "3rd year",
-  "4": "4th year",
-};
+function ordinalYearLabel(year) {
+  const suffix = year === 1 ? "st" : year === 2 ? "nd" : year === 3 ? "rd" : "th";
+  return `${year}${suffix} year`;
+}
+
+const MEMBERSHIP_YEAR_LABELS = Object.fromEntries(
+  Array.from({ length: 13 }, (_, index) => {
+    const year = index + 1;
+    return [String(year), ordinalYearLabel(year)];
+  })
+);
+
+const OTHER_PATROL_VALUE = "__other__";
 
 const LEADERSHIP_LABELS = {
   none: "N/A",
@@ -514,6 +403,16 @@ function returningLabel(value) {
   return RETURNING_LABELS[returningValue(value)] || "No status set";
 }
 
+function normalizePlannerNote(note = {}) {
+  if (!note || typeof note !== "object") return null;
+  return {
+    id: String(note.id || uid("note")),
+    title: String(note.title || "Untitled page"),
+    content: String(note.content || ""),
+    updatedAt: note.updatedAt || new Date().toISOString(),
+  };
+}
+
 let state = loadState();
 let calendarCursor = startOfMonth(new Date());
 let planningCalendarCursor = startOfMonth(new Date());
@@ -533,16 +432,10 @@ let chatHistory = [];
 let kidBadgeMode = "progress";
 let attendanceView = "roster";
 let patrolPointsMode = "earned";
-if (!state.kids.length) {
-  loadExcelRosterIntoState({ replace: true });
-  saveState();
-}
+let selectedNoteId = "";
+let notesSaveTimer = null;
 if (!state.settings.badgeProgressResetDone) {
   state.settings.badgeProgressResetDone = true;
-  saveState();
-}
-if (!(state.attendanceRecords || []).length) {
-  loadExcelAttendanceIntoState();
   saveState();
 }
 suppressDriveAutoPush = false;
@@ -561,6 +454,7 @@ function loadState() {
 
 function normalizeState(value) {
   const fallback = buildEmptyData();
+  const branch = branchValue((value.settings || {}).branch || value.branch || fallback.settings.branch);
   const normalized = {
     kids: Array.isArray(value.kids) ? value.kids.map((kid) => ({
       ...kid,
@@ -573,10 +467,12 @@ function normalizeState(value) {
     meetings: Array.isArray(value.meetings) ? value.meetings : [],
     baselineCredits: Array.isArray(value.baselineCredits) ? value.baselineCredits : [],
     manualBadgeAdjustments: value.manualBadgeAdjustments && typeof value.manualBadgeAdjustments === "object" ? value.manualBadgeAdjustments : {},
+    manualCriteriaSelections: value.manualCriteriaSelections && typeof value.manualCriteriaSelections === "object" ? value.manualCriteriaSelections : {},
     badgeHandouts: value.badgeHandouts && typeof value.badgeHandouts === "object" ? value.badgeHandouts : {},
     attendanceRecords: Array.isArray(value.attendanceRecords) ? value.attendanceRecords : [],
     scheduledEvents: Array.isArray(value.scheduledEvents) ? value.scheduledEvents : [],
     weeklyPlans: Array.isArray(value.weeklyPlans) ? value.weeklyPlans : [],
+    notes: Array.isArray(value.notes) ? value.notes.map(normalizePlannerNote).filter(Boolean) : [],
     patrolPointSpending: Array.isArray(value.patrolPointSpending) ? value.patrolPointSpending.map(normalizePatrolSpendEntry) : [],
     cookieTracker: value.cookieTracker && typeof value.cookieTracker === "object" ? {
       rows: value.cookieTracker.rows && typeof value.cookieTracker.rows === "object" ? value.cookieTracker.rows : {},
@@ -586,6 +482,7 @@ function normalizeState(value) {
     settings: {
       ...fallback.settings,
       ...(value.settings || {}),
+      branch,
       driveSync: { ...fallback.settings.driveSync, ...((value.settings || {}).driveSync || {}) },
       appScriptSync: { ...fallback.settings.appScriptSync, ...((value.settings || {}).appScriptSync || {}) },
     },
@@ -613,11 +510,13 @@ function trackerPayloadObject() {
 }
 
 function blankTrackerPayloadObject(sync = appScriptSyncSettings()) {
-  const blank = buildEmptyData();
+  const branch = branchValue(state.settings?.branch);
+  const blank = buildEmptyData(branch);
   return {
     ...blank,
     settings: {
       ...blank.settings,
+      branch,
       appScriptSync: {
         ...(blank.settings.appScriptSync || {}),
         endpoint: sync.endpoint || DEFAULT_APPS_SCRIPT_ENDPOINT,
@@ -645,7 +544,7 @@ function looksLikeTrackerPayload(value) {
 }
 
 function remapToOfficialBadges(data, previousBadges = []) {
-  const officialBadges = officialBadgesWithSavedCriteria(previousBadges);
+  const officialBadges = officialBadgesWithSavedCriteria(previousBadges, data.settings?.branch);
   const customBadges = previousBadges.filter(isCustomBadge);
   const allBadges = [...officialBadges, ...customBadges];
   const officialById = new Map(officialBadges.map((badge) => [badge.id, badge]));
@@ -695,6 +594,9 @@ function remapToOfficialBadges(data, previousBadges = []) {
     badges: allBadges,
     manualBadgeAdjustments: Object.fromEntries(
       Object.entries(data.manualBadgeAdjustments || {}).filter(([key]) => allById.has(key.split("|")[1]))
+    ),
+    manualCriteriaSelections: Object.fromEntries(
+      Object.entries(data.manualCriteriaSelections || {}).filter(([key]) => allById.has(key.split("|")[1]))
     ),
     badgeHandouts: Object.fromEntries(
       Object.entries(data.badgeHandouts || {}).filter(([key]) => allById.has(key.split("|")[1]))
@@ -813,6 +715,7 @@ function saveAppScriptSyncSettingsFromForm(source = "data") {
   const pinInput = source === "login-create" ? $("#loginNewTrackerPin") : source === "login" ? $("#loginTrackerPin") : $("#appScriptPin");
   const nameInput = source === "login-create" ? $("#loginNewTrackerName") : source === "login" ? null : $("#appScriptTrackerName");
   const adminInput = $("#appScriptAdminPin");
+  if (source === "login-create" && $("#loginBranch")) state.settings.branch = branchValue($("#loginBranch").value);
   if (endpointInput) sync.endpoint = endpointInput.value.trim() || DEFAULT_APPS_SCRIPT_ENDPOINT;
   if (codeInput) sync.trackerCode = codeInput.value.trim().toUpperCase();
   if (pinInput) sync.pin = pinInput.value.trim();
@@ -823,6 +726,7 @@ function saveAppScriptSyncSettingsFromForm(source = "data") {
   saveState();
   suppressAppScriptAutoPush = false;
   renderAppScriptSyncSettings();
+  renderUnitTrackerTitle();
 }
 
 function renderAppScriptSyncSettings() {
@@ -841,6 +745,7 @@ function renderAppScriptSyncSettings() {
   if ($("#loginCodeEndpoint")) $("#loginCodeEndpoint").value = sync.endpoint || "";
   if ($("#loginTrackerCode")) $("#loginTrackerCode").value = sync.trackerCode || "";
   if ($("#loginTrackerPin")) $("#loginTrackerPin").value = sync.pin || "";
+  if ($("#loginBranch")) $("#loginBranch").value = branchValue(state.settings?.branch);
   const pieces = [];
   if (sync.trackerCode) pieces.push(`Tracker code (username): ${sync.trackerCode}`);
   if (sync.adminMode) pieces.push("Admin access");
@@ -1042,17 +947,20 @@ async function listAppScriptTrackers() {
 }
 
 function unitTrackerDisplayName() {
+  const appScriptSync = appScriptSyncSettings();
+  const trackerCode = String(appScriptSync.trackerCode || "").trim();
+  if (trackerCode) return trackerCode;
   const sync = driveSyncSettings();
   const selected = driveTrackerFiles.find((file) => file.id === sync.fileId);
   const fileName = String(selected?.name || sync.fileName || "").trim();
-  if (!sync.fileId || !fileName) return "Embers Tracker";
+  if (!sync.fileId || !fileName) return "Tracker";
   const baseName = fileName
     .replace(/\.json$/i, "")
     .replace(/\bsync\b$/i, "")
     .replace(/[-_]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-  if (!baseName) return "Embers Tracker";
+  if (!baseName) return "Tracker";
   const title = baseName.replace(/\b[a-z]/g, (letter) => letter.toUpperCase());
   return /\btracker\b/i.test(title) ? title : `${title} Tracker`;
 }
@@ -1743,16 +1651,40 @@ function compareKidsForBadges(a, b) {
 }
 
 function patrolOptions(current = "") {
-  return [...new Set(["Dryads", "Lares", "Elves", "Leprechauns", "Fairies", "Nymphs", "Gnomes", "Pixies", "Kelpies", "Sprites", ...state.kids.map((kid) => kid.patrol).filter(Boolean), current].filter(Boolean))]
+  return [...new Set(["Dryads", "Lares", "Elves", "Leprechauns", "Fairies", "Nymphs", "Gnomes", "Pixies", "Kelpies", "Sprites", ...state.kids.map((kid) => kid.patrol).filter(Boolean), current].filter((patrol) => patrol && patrol !== OTHER_PATROL_VALUE))]
     .sort((a, b) => a.localeCompare(b));
+}
+
+function patrolSelectOptions(current = "", emptyLabel = "Choose patrol") {
+  const options = patrolOptions(current);
+  const currentIsKnown = !current || options.includes(current);
+  return `
+    <option value="" ${current ? "" : "selected"}>${escapeHtml(emptyLabel)}</option>
+    ${options.map((patrol) => `<option value="${escapeAttr(patrol)}" ${currentIsKnown && current === patrol ? "selected" : ""}>${escapeHtml(patrol)}</option>`).join("")}
+    <option value="${OTHER_PATROL_VALUE}" ${current && !currentIsKnown ? "selected" : ""}>Other</option>
+  `;
+}
+
+function setOtherPatrolInput(select, input, current = "") {
+  if (!select || !input) return;
+  const isOther = select.value === OTHER_PATROL_VALUE;
+  input.classList.toggle("hidden", !isOther);
+  input.hidden = !isOther;
+  input.value = isOther ? current : "";
+}
+
+function selectedPatrolFromForm() {
+  const select = $("#kidPatrol");
+  const other = $("#kidPatrolOther");
+  return select?.value === OTHER_PATROL_VALUE ? (other?.value || "").trim() : (select?.value || "").trim();
 }
 
 function renderRosterFormOptions() {
   const patrolSelect = $("#kidPatrol");
   if (patrolSelect) {
-    const current = patrolSelect.value;
-    patrolSelect.innerHTML = `<option value="">Choose patrol</option>${patrolOptions(current).map((patrol) => `<option value="${escapeAttr(patrol)}">${escapeHtml(patrol)}</option>`).join("")}`;
-    patrolSelect.value = patrolOptions(current).includes(current) ? current : "";
+    const current = patrolSelect.value === OTHER_PATROL_VALUE ? "" : patrolSelect.value;
+    patrolSelect.innerHTML = patrolSelectOptions(current);
+    setOtherPatrolInput(patrolSelect, $("#kidPatrolOther"));
   }
 }
 
@@ -1806,6 +1738,8 @@ const CATEGORY_THEMES = {
   "Build Skills": { fill: "#d7e9c1", accent: "#4f8732" },
   "Experiment and Create": { fill: "#ffdf9f", accent: "#c15d2d" },
   "Into the Outdoors": { fill: "#c7e8cb", accent: "#2f7b4f" },
+  "Camp Awards": { fill: "#e2f0dc", accent: "#3c7a39" },
+  "Insignia & Awards": { fill: "#edf0f7", accent: "#56627a" },
   "Discovery Badges": { fill: "#d6eef7", accent: "#116293" },
 };
 
@@ -1818,6 +1752,8 @@ const CATEGORY_ORDER = [
   "Guide Together",
   "Into the Outdoors",
   "Take Action",
+  "Camp Awards",
+  "Insignia & Awards",
   "Discovery Badges",
 ];
 
@@ -1884,6 +1820,7 @@ function officialBadgeKey(text) {
 }
 
 function badgeImageSrc(badge) {
+  if (badge.imageUrl) return badge.imageUrl;
   return OFFICIAL_BADGE_IMAGES[officialBadgeKey(badge.name)] || badgeImageSvg(badge);
 }
 
@@ -2062,6 +1999,49 @@ function manualBadgeAdjustment(kidId, badgeId) {
   return Number((state.manualBadgeAdjustments || {})[manualAdjustmentKey(kidId, badgeId)]) || 0;
 }
 
+function isCriteriaBadge(badge = {}) {
+  return badge.progressMode === "criteria";
+}
+
+function criteriaSelectionKey(kidId, badgeId) {
+  return `${kidId}|${badgeId}`;
+}
+
+function baselineRequirementIdsForKidBadge(kidId, badgeId) {
+  const ids = [];
+  (state.baselineCredits || []).forEach((credit) => {
+    if (credit.kidId !== kidId || credit.badgeId !== badgeId) return;
+    (credit.requirementIds || []).forEach((id) => ids.push(id));
+  });
+  return ids;
+}
+
+function selectedCriteriaIds(kidId, badge) {
+  const allowed = new Set((badge.requirements || []).map((requirement) => requirement.id));
+  const stored = Array.isArray((state.manualCriteriaSelections || {})[criteriaSelectionKey(kidId, badge.id)])
+    ? (state.manualCriteriaSelections || {})[criteriaSelectionKey(kidId, badge.id)]
+    : [];
+  const baseline = baselineRequirementIdsForKidBadge(kidId, badge.id);
+  return [...new Set([...baseline, ...stored].filter((id) => allowed.has(id)))];
+}
+
+function setCriteriaSelection(kidId, badgeId, requirementId, checked) {
+  const badge = state.badges.find((item) => item.id === badgeId);
+  if (!badge) return;
+  const allowed = new Set((badge.requirements || []).map((requirement) => requirement.id));
+  if (!allowed.has(requirementId)) return;
+  state.manualCriteriaSelections = state.manualCriteriaSelections || {};
+  const key = criteriaSelectionKey(kidId, badgeId);
+  const baseline = new Set(baselineRequirementIdsForKidBadge(kidId, badgeId));
+  const selected = new Set(Array.isArray(state.manualCriteriaSelections[key]) ? state.manualCriteriaSelections[key] : []);
+  if (checked) selected.add(requirementId);
+  else selected.delete(requirementId);
+  baseline.forEach((id) => selected.delete(id));
+  const stored = [...selected].filter((id) => allowed.has(id));
+  if (stored.length) state.manualCriteriaSelections[key] = stored;
+  else delete state.manualCriteriaSelections[key];
+}
+
 function badgeHandoutKey(kidId, badgeId) {
   return `${kidId}|${badgeId}`;
 }
@@ -2147,6 +2127,20 @@ function badgeProgress(kidId, badge, throughDate = null) {
     };
   }
   const needed = Math.min(Number(badge.requiredCount) || badge.requirements.length, badge.requirements.length);
+  if (isCriteriaBadge(badge)) {
+    const selectedIds = new Set(selectedCriteriaIds(kidId, badge));
+    const completed = badge.requirements.filter((requirement) => selectedIds.has(requirement.id));
+    const completedCount = completed.length;
+    const earned = completedCount >= needed && needed > 0;
+    return {
+      completed,
+      completedCount,
+      needed,
+      displayMax: badge.requirements.length,
+      earned,
+      percent: needed ? Math.min(100, Math.round((completedCount / needed) * 100)) : 0,
+    };
+  }
   const automaticCompleted = automaticBadgeCredits(kidId, badge, throughDate);
   const adjustedCount = Math.max(0, Math.min(automaticCompleted.length + manualBadgeAdjustment(kidId, badge.id), needed));
   const completed = automaticCompleted.slice(0, adjustedCount);
@@ -2294,7 +2288,6 @@ function renderAttendanceGrid() {
 
 function renderKids() {
   renderRosterFormOptions();
-  $("#rosterChecked").checked = Boolean(state.settings.rosterChecked);
   const rows = [];
   let activeYear = null;
   const kidsByYear = [...state.kids].sort(compareKidsForRoster);
@@ -2330,9 +2323,15 @@ function renderKids() {
         </td>
         <td>
           <select class="table-select" data-kid-patrol="${escapeAttr(kid.id)}" aria-label="Patrol for ${escapeAttr(kid.name)}">
-            <option value="" ${kid.patrol ? "" : "selected"}>No patrol</option>
-            ${patrolOptions(kid.patrol).map((patrol) => `<option value="${escapeAttr(patrol)}" ${kid.patrol === patrol ? "selected" : ""}>${escapeHtml(patrol)}</option>`).join("")}
+            ${patrolSelectOptions(kid.patrol, "No patrol")}
           </select>
+          <input
+            class="table-input patrol-other-input hidden"
+            data-kid-patrol-other="${escapeAttr(kid.id)}"
+            type="text"
+            placeholder="Type patrol"
+            hidden
+          />
         </td>
         <td>
           <select class="table-select" data-kid-leadership="${escapeAttr(kid.id)}" aria-label="Leadership for ${escapeAttr(kid.name)}">
@@ -2340,7 +2339,7 @@ function renderKids() {
           </select>
         </td>
         <td>
-          <select class="table-select" data-kid-membership="${escapeAttr(kid.id)}" aria-label="Membership year for ${escapeAttr(kid.name)}">
+          <select class="table-select" data-kid-membership="${escapeAttr(kid.id)}" aria-label="GGC membership year for ${escapeAttr(kid.name)}">
             <option value="" ${membershipYearValue(kid.membershipYear) ? "" : "selected"}>No membership year</option>
             ${Object.entries(MEMBERSHIP_YEAR_LABELS).map(([value, label]) => `<option value="${escapeAttr(value)}" ${membershipYearValue(kid.membershipYear) === value ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}
           </select>
@@ -2936,6 +2935,85 @@ function renderPlanning() {
   renderPlanningCalendar();
 }
 
+function plannerNotes() {
+  state.notes = Array.isArray(state.notes) ? state.notes.map(normalizePlannerNote).filter(Boolean) : [];
+  return state.notes;
+}
+
+function selectedPlannerNote() {
+  const notes = plannerNotes();
+  if (!notes.length) {
+    selectedNoteId = "";
+    return null;
+  }
+  if (!notes.some((note) => note.id === selectedNoteId)) selectedNoteId = notes[0].id;
+  return notes.find((note) => note.id === selectedNoteId) || null;
+}
+
+function renderNotes() {
+  const notes = plannerNotes();
+  const active = selectedPlannerNote();
+  const notesList = $("#notesList");
+  const titleInput = $("#noteTitle");
+  const contentInput = $("#noteContent");
+  const deleteButton = $("#deletePlannerNote");
+  if (!notesList || !titleInput || !contentInput) return;
+
+  notesList.innerHTML = notes.length ? notes.map((note) => `
+    <button class="note-page-button ${note.id === selectedNoteId ? "is-active" : ""}" data-note-id="${escapeAttr(note.id)}" type="button">
+      <span>${escapeHtml(note.title || "Untitled page")}</span>
+      <small>${escapeHtml(formatDateTime(note.updatedAt))}</small>
+    </button>
+  `).join("") : emptyState("No notes yet.");
+
+  titleInput.disabled = !active;
+  contentInput.disabled = !active;
+  if (deleteButton) deleteButton.disabled = !active;
+  titleInput.value = active?.title || "";
+  contentInput.value = active?.content || "";
+}
+
+function createPlannerNote() {
+  const note = normalizePlannerNote({
+    id: uid("note"),
+    title: "Untitled page",
+    content: "",
+    updatedAt: new Date().toISOString(),
+  });
+  state.notes = [...plannerNotes(), note];
+  selectedNoteId = note.id;
+  saveState();
+  renderNotes();
+  $("#noteTitle")?.focus();
+  $("#noteTitle")?.select();
+}
+
+function scheduleNoteSave() {
+  const note = selectedPlannerNote();
+  if (!note) return;
+  note.title = $("#noteTitle").value.trim() || "Untitled page";
+  note.content = $("#noteContent").value;
+  note.updatedAt = new Date().toISOString();
+  const activeButton = $$("[data-note-id]").find((button) => button.dataset.noteId === note.id);
+  if (activeButton) {
+    const title = activeButton.querySelector("span");
+    const timestamp = activeButton.querySelector("small");
+    if (title) title.textContent = note.title;
+    if (timestamp) timestamp.textContent = formatDateTime(note.updatedAt);
+  }
+  clearTimeout(notesSaveTimer);
+  notesSaveTimer = setTimeout(() => {
+    saveState();
+  }, 700);
+}
+
+function flushNoteSave() {
+  if (!notesSaveTimer) return;
+  clearTimeout(notesSaveTimer);
+  notesSaveTimer = null;
+  saveState();
+}
+
 function itineraryBadgeRows(badgeIds = [], badgeCredits = {}) {
   const badgeById = new Map(state.badges.map((badge) => [badge.id, badge]));
   return (badgeIds || [])
@@ -3018,7 +3096,7 @@ function openEventItinerary(eventId) {
 const COOKIE_BOX_PRICE = 6;
 const COOKIE_CASE_PRICE = 72;
 const COOKIE_FLAVORS = ["Mint", "Chocolate/Vanilla"];
-const COOKIE_PAYMENT_METHODS = ["", "Card", "Cash", "Other"];
+const COOKIE_PAYMENT_METHODS = ["", "Square", "Cash", "Other"];
 
 function cookieRows() {
   state.cookieTracker = state.cookieTracker || { rows: {}, orders: [], grocery: {} };
@@ -3031,6 +3109,11 @@ function normalizeCookieOrder(order = {}) {
     id: order.id || uid("cookie-order"),
     name: order.name || "Cookie order",
     totalCost: cookieNumber(order.totalCost ?? order.amount ?? order.cost),
+    chocolateCases: cookieNumber(order.chocolateCases ?? order.chocolateVanillaCases ?? order.vanillaCases),
+    mintCases: cookieNumber(order.mintCases),
+    surplusChocolateCases: cookieNumber(order.surplusChocolateCases ?? order.surplusChocolateVanillaCases ?? order.surplusVanillaCases),
+    surplusMintCases: cookieNumber(order.surplusMintCases),
+    archived: Boolean(order.archived),
     notes: order.notes || "",
   };
 }
@@ -3041,9 +3124,19 @@ function cookieOrders() {
   return state.cookieTracker.orders;
 }
 
+function activeCookieOrders() {
+  return cookieOrders().filter((order) => !order.archived);
+}
+
+function archivedCookieOrders() {
+  return cookieOrders().filter((order) => order.archived);
+}
+
 function cookieOrderOptions(selected = "") {
-  const orders = cookieOrders();
-  return `<option value="">No order selected</option>${orders.map((order) => `<option value="${escapeAttr(order.id)}" ${selected === order.id ? "selected" : ""}>${escapeHtml(order.name)}</option>`).join("")}`;
+  const orders = activeCookieOrders();
+  const selectedArchived = selected ? archivedCookieOrders().find((order) => order.id === selected) : null;
+  const optionOrders = selectedArchived ? [...orders, selectedArchived] : orders;
+  return `<option value="">No order selected</option>${optionOrders.map((order) => `<option value="${escapeAttr(order.id)}" ${selected === order.id ? "selected" : ""}>${escapeHtml(order.name)}${order.archived ? " (archived)" : ""}</option>`).join("")}`;
 }
 
 function newCookiePickup() {
@@ -3053,7 +3146,7 @@ function newCookiePickup() {
     flavor: "Mint",
     cases: 0,
     boxes: 0,
-    orderId: cookieOrders()[0]?.id || "",
+    orderId: activeCookieOrders()[0]?.id || "",
     notes: "",
   };
 }
@@ -3064,7 +3157,8 @@ function newCookiePayment() {
     date: today(),
     amount: 0,
     method: "",
-    orderId: cookieOrders()[0]?.id || "",
+    methodOther: "",
+    orderId: activeCookieOrders()[0]?.id || "",
     notes: "",
   };
 }
@@ -3099,7 +3193,8 @@ function normalizeCookieRow(row = {}) {
     id: payment.id || uid("cookie-payment"),
     date: payment.date || "",
     amount: cookieNumber(payment.amount),
-    method: COOKIE_PAYMENT_METHODS.includes(payment.method) ? payment.method : "",
+    method: normalizeCookiePaymentMethod(payment.method),
+    methodOther: payment.methodOther || "",
     orderId: cookieOrders().some((order) => order.id === payment.orderId) ? payment.orderId : "",
     notes: payment.notes || "",
   }));
@@ -3108,7 +3203,8 @@ function normalizeCookieRow(row = {}) {
       id: uid("cookie-payment"),
       date: legacyPayment.date || row.paymentDate || "",
       amount: legacyPaymentAmount,
-      method: COOKIE_PAYMENT_METHODS.includes(legacyPayment.method || row.paymentMethod) ? (legacyPayment.method || row.paymentMethod) : "",
+      method: normalizeCookiePaymentMethod(legacyPayment.method || row.paymentMethod),
+      methodOther: "",
       orderId: "",
       notes: legacyPayment.notes || row.paymentNotes || "",
     });
@@ -3137,20 +3233,40 @@ function cookieMoney(value) {
   return `$${Math.round(value).toLocaleString()}`;
 }
 
+function normalizeCookiePaymentMethod(method = "") {
+  const value = String(method || "").trim();
+  if (!value) return "";
+  if (/card/i.test(value)) return "Square";
+  return COOKIE_PAYMENT_METHODS.includes(value) ? value : "Other";
+}
+
+function cookiePaymentMethodLabel(payment = {}) {
+  if (payment.method === "Other") return payment.methodOther?.trim() || "Other";
+  return payment.method || "No method";
+}
+
 function cookiePickupOwed(pickup = {}) {
   return cookieNumber(pickup.cases) * COOKIE_CASE_PRICE + cookieNumber(pickup.boxes) * COOKIE_BOX_PRICE;
 }
 
-function cookieRowSummary(row) {
-  const pickups = Array.isArray(row.pickups) ? row.pickups : [];
+function cookieOrderIsActive(orderId = "") {
+  if (!orderId) return true;
+  const order = cookieOrders().find((item) => item.id === orderId);
+  return !order || !order.archived;
+}
+
+function cookieRowSummary(row, options = {}) {
+  const pickups = (Array.isArray(row.pickups) ? row.pickups : []).filter((pickup) => !options.activeOnly || cookieOrderIsActive(pickup.orderId));
   const owed = pickups.reduce((sum, pickup) => sum + cookiePickupOwed(pickup), 0);
   const cases = pickups.reduce((sum, pickup) => sum + cookieNumber(pickup.cases), 0);
   const boxes = pickups.reduce((sum, pickup) => sum + cookieNumber(pickup.boxes), 0);
-  const payments = Array.isArray(row.payments) ? row.payments : [];
+  const payments = (Array.isArray(row.payments) ? row.payments : []).filter((payment) => !options.activeOnly || cookieOrderIsActive(payment.orderId));
   const paid = payments.reduce((sum, payment) => sum + cookieNumber(payment.amount), 0);
   return {
     owed,
+    activeOwed: owed,
     paid,
+    activePaid: paid,
     outstanding: Math.max(owed - paid, 0),
     cases,
     boxes,
@@ -3179,7 +3295,25 @@ function cookieOrderStats(orderId) {
     });
   });
   const order = cookieOrders().find((item) => item.id === orderId);
-  const target = cookieNumber(order?.totalCost);
+  const enteredTarget = cookieNumber(order?.totalCost);
+  const chocolateCases = cookieNumber(order?.chocolateCases);
+  const mintCases = cookieNumber(order?.mintCases);
+  const surplusChocolateCases = cookieNumber(order?.surplusChocolateCases);
+  const surplusMintCases = cookieNumber(order?.surplusMintCases);
+  const unitCases = chocolateCases + mintCases;
+  const surplusCases = surplusChocolateCases + surplusMintCases;
+  const orderedCases = unitCases + surplusCases;
+  const orderedValue = orderedCases * COOKIE_CASE_PRICE;
+  const target = enteredTarget || orderedValue;
+  const paymentMethods = {};
+  state.kids.forEach((kid) => {
+    const row = cookieRowForKid(kid.id);
+    (row.payments || []).forEach((payment) => {
+      if (payment.orderId !== orderId) return;
+      const label = cookiePaymentMethodLabel(payment);
+      paymentMethods[label] = (paymentMethods[label] || 0) + cookieNumber(payment.amount);
+    });
+  });
   return {
     target,
     paid,
@@ -3187,15 +3321,58 @@ function cookieOrderStats(orderId) {
     cases,
     boxes,
     totalBoxes: cases * 12 + boxes,
+    chocolateCases,
+    mintCases,
+    surplusChocolateCases,
+    surplusMintCases,
+    unitCases,
+    surplusCases,
+    orderedCases,
+    orderedValue,
+    paymentMethods,
     percent: target ? Math.min(100, Math.round((paid / target) * 100)) : 0,
+    outstanding: Math.max(target - paid, 0),
   };
+}
+
+function paymentMethodColor(method = "") {
+  const normalized = method.toLowerCase();
+  if (normalized.includes("square")) return "#2d6a9f";
+  if (normalized.includes("cash")) return "#45a36f";
+  return "#c45f30";
+}
+
+function cookiePaymentStackedBar(stats) {
+  const target = Math.max(cookieNumber(stats.target), stats.paid, 1);
+  const entries = Object.entries(stats.paymentMethods || {}).filter(([, amount]) => amount > 0);
+  if (!entries.length) return `<div class="cookie-method-bar is-empty" title="No payments recorded yet"><span></span></div>`;
+  return `
+    <div class="cookie-method-bar" aria-label="Payments by method">
+      ${entries.map(([method, amount]) => {
+        const percent = Math.max(2, Math.min(100, (amount / target) * 100));
+        return `<span style="width: ${percent}%; background: ${paymentMethodColor(method)};" title="${escapeAttr(`${method}: ${cookieMoney(amount)}`)}"></span>`;
+      }).join("")}
+    </div>
+  `;
+}
+
+function cookieOrderCaseSummary(stats) {
+  return `
+    <div class="cookie-order-case-summary">
+      <div><span>Chocolate/Vanilla</span><strong>${stats.chocolateCases}</strong><small>unit cases</small></div>
+      <div><span>Mint</span><strong>${stats.mintCases}</strong><small>unit cases</small></div>
+      <div><span>Surplus Chocolate/Vanilla</span><strong>${stats.surplusChocolateCases}</strong><small>cases</small></div>
+      <div><span>Surplus Mint</span><strong>${stats.surplusMintCases}</strong><small>cases</small></div>
+    </div>
+  `;
 }
 
 function renderCookieOrderProgress() {
   const wrap = $("#cookieOrderProgress");
   if (!wrap) return;
-  const orders = cookieOrders();
-  wrap.innerHTML = orders.map((order) => {
+  const activeOrders = activeCookieOrders();
+  const archivedOrders = archivedCookieOrders();
+  const activeMarkup = activeOrders.map((order) => {
     const stats = cookieOrderStats(order.id);
     return `
       <article class="cookie-order-card">
@@ -3205,19 +3382,54 @@ function renderCookieOrderProgress() {
             <p class="muted">${cookieMoney(stats.paid)} paid of ${cookieMoney(stats.target)} unit order cost</p>
           </div>
           <div class="inline-actions">
-            <span class="tag">${stats.totalBoxes} boxes out</span>
+            <span class="tag">${stats.orderedCases} cases ordered</span>
+            <button class="text-button" data-archive-cookie-order="${escapeAttr(order.id)}" type="button">Archive</button>
             <button class="text-button" data-remove-cookie-order="${escapeAttr(order.id)}" type="button">Remove</button>
           </div>
         </header>
-        ${progressBar(stats.percent)}
+        ${cookiePaymentStackedBar(stats)}
+        <div class="cookie-order-progress-line">
+          <span>${stats.percent}% paid</span>
+          <span>${cookieMoney(stats.outstanding || Math.max(stats.target - stats.paid, 0))} remaining</span>
+        </div>
+        ${cookieOrderCaseSummary(stats)}
+        <details class="cookie-order-edit">
+          <summary>Edit order</summary>
+          <div class="cookie-order-edit-grid">
+            <label>Order name<input data-cookie-order-id="${escapeAttr(order.id)}" data-cookie-order-field="name" type="text" value="${escapeAttr(order.name)}" /></label>
+            <label>$ amount<input data-cookie-order-id="${escapeAttr(order.id)}" data-cookie-order-field="totalCost" type="number" min="0" step="1" value="${escapeAttr(order.totalCost)}" /></label>
+            <label>Chocolate/Vanilla cases<input data-cookie-order-id="${escapeAttr(order.id)}" data-cookie-order-field="chocolateCases" type="number" min="0" step="1" value="${escapeAttr(order.chocolateCases)}" /></label>
+            <label>Mint cases<input data-cookie-order-id="${escapeAttr(order.id)}" data-cookie-order-field="mintCases" type="number" min="0" step="1" value="${escapeAttr(order.mintCases)}" /></label>
+            <label>Surplus Chocolate/Vanilla<input data-cookie-order-id="${escapeAttr(order.id)}" data-cookie-order-field="surplusChocolateCases" type="number" min="0" step="1" value="${escapeAttr(order.surplusChocolateCases)}" /></label>
+            <label>Surplus Mint<input data-cookie-order-id="${escapeAttr(order.id)}" data-cookie-order-field="surplusMintCases" type="number" min="0" step="1" value="${escapeAttr(order.surplusMintCases)}" /></label>
+          </div>
+        </details>
         <div class="cookie-order-stats">
           <span>Owed by families <strong>${cookieMoney(stats.owed)}</strong></span>
-          <span>Cases <strong>${stats.cases}</strong></span>
-          <span>Loose boxes <strong>${stats.boxes}</strong></span>
+          <span>Picked up <strong>${stats.cases} cases + ${stats.boxes} boxes</strong></span>
+          <span>Order value <strong>${cookieMoney(stats.orderedValue)}</strong></span>
         </div>
       </article>
     `;
-  }).join("") || `<div class="empty-box">Add Fall, Winter, or another cookie order to track unit progress.</div>`;
+  }).join("") || `<div class="empty-box">Add a cookie order to track unit progress.</div>`;
+
+  const archivedMarkup = archivedOrders.length ? `
+    <details class="cookie-archive-panel">
+      <summary>Archived orders (${archivedOrders.length})</summary>
+      <div class="cookie-archive-list">
+        ${archivedOrders.map((order) => {
+          const stats = cookieOrderStats(order.id);
+          return `
+            <article>
+              <span><strong>${escapeHtml(order.name)}</strong> ${stats.orderedCases} cases, ${cookieMoney(stats.paid)} paid</span>
+              <button class="text-button" data-unarchive-cookie-order="${escapeAttr(order.id)}" type="button">Restore</button>
+            </article>
+          `;
+        }).join("")}
+      </div>
+    </details>
+  ` : "";
+  wrap.innerHTML = activeMarkup + archivedMarkup;
 }
 
 function cookieViewMode() {
@@ -3238,7 +3450,7 @@ function selectedCookieKidId() {
 
 function renderCookieTotals() {
   const totals = state.kids.reduce((sum, kid) => {
-    const summary = cookieRowSummary(cookieRowForKid(kid.id));
+    const summary = cookieRowSummary(cookieRowForKid(kid.id), { activeOnly: true });
     return {
       owed: sum.owed + summary.owed,
       paid: sum.paid + summary.paid,
@@ -3329,7 +3541,9 @@ function renderCookieTracker() {
 
 function renderCookieEntryRow(kid) {
     const row = cookieRowForKid(kid.id);
-    const summary = cookieRowSummary(row);
+    const summary = cookieRowSummary(row, { activeOnly: true });
+    const activePickups = (row.pickups || []).filter((pickup) => cookieOrderIsActive(pickup.orderId));
+    const activePayments = (row.payments || []).filter((payment) => cookieOrderIsActive(payment.orderId));
     return `
       <article class="cookie-ember-row cookie-entry-row ${summary.paidInFull ? "is-paid" : ""}" data-cookie-row="${escapeAttr(kid.id)}">
         <div class="cookie-ember-summary" data-cookie-entry-summary>
@@ -3347,58 +3561,110 @@ function renderCookieEntryRow(kid) {
             <div><span class="small-note">Paid</span><strong data-cookie-computed="paid">${cookieMoney(summary.paid)}</strong></div>
             <div><span class="small-note">Outstanding</span><strong data-cookie-computed="outstanding">${cookieMoney(summary.outstanding)}</strong></div>
           </div>
-          <div class="cookie-detail-heading">
-            <div>
-              <h3>Cookie pickups</h3>
-              <p class="muted">Record each time this Ember takes cookies home.</p>
-            </div>
-            <button class="quiet-button" data-cookie-add-pickup="${escapeAttr(kid.id)}" type="button">Add pickup</button>
-          </div>
-          <div class="cookie-entry-list">
-          ${(row.pickups || []).map((pickup) => `
-            <article class="cookie-entry-card">
-              <header>
-                <strong data-cookie-pickup-total="${escapeAttr(pickup.id)}">${cookieMoney(cookiePickupOwed(pickup))}</strong>
-                <button class="text-button" data-cookie-remove-pickup="${escapeAttr(pickup.id)}" data-cookie-kid-id="${escapeAttr(kid.id)}" type="button">Remove</button>
-              </header>
-              <div class="cookie-field-grid">
-                <label>Pick up date<input data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-pickup-id="${escapeAttr(pickup.id)}" data-cookie-pickup-field="date" type="date" value="${escapeAttr(pickup.date || "")}" /></label>
-                <label>Order<select data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-pickup-id="${escapeAttr(pickup.id)}" data-cookie-pickup-field="orderId">${cookieOrderOptions(pickup.orderId || "")}</select></label>
-                <label>Flavour<select data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-pickup-id="${escapeAttr(pickup.id)}" data-cookie-pickup-field="flavor">${COOKIE_FLAVORS.map((flavor) => `<option value="${escapeAttr(flavor)}" ${pickup.flavor === flavor ? "selected" : ""}>${escapeHtml(flavor)}</option>`).join("")}</select></label>
-                <label>Cases<input data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-pickup-id="${escapeAttr(pickup.id)}" data-cookie-pickup-field="cases" type="number" min="0" step="1" value="${escapeAttr(pickup.cases)}" /></label>
-                <label>Boxes<input data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-pickup-id="${escapeAttr(pickup.id)}" data-cookie-pickup-field="boxes" type="number" min="0" step="1" value="${escapeAttr(pickup.boxes)}" /></label>
-                <label class="wide-field">Notes<input data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-pickup-id="${escapeAttr(pickup.id)}" data-cookie-pickup-field="notes" type="text" placeholder="Optional note" value="${escapeAttr(pickup.notes || "")}" /></label>
+          <div class="cookie-entry-form-grid">
+            <form class="cookie-quick-form cookie-pickup-form" data-cookie-pickup-form data-cookie-kid-id="${escapeAttr(kid.id)}">
+              <div class="cookie-form-heading">
+                <h3>Add pickup</h3>
+                <span>Cookies sent home</span>
               </div>
-            </article>
-          `).join("") || `<div class="empty-box">No cookie pickups yet.</div>`}
-          </div>
-          <div class="cookie-detail-heading">
-            <div>
-              <h3>Payments</h3>
-              <p class="muted">Record each payment as it comes in.</p>
-            </div>
-            <button class="quiet-button" data-cookie-add-payment="${escapeAttr(kid.id)}" type="button">Add payment</button>
-          </div>
-          <div class="cookie-entry-list">
-          ${(row.payments || []).map((payment) => `
-            <article class="cookie-entry-card">
-              <header>
-                <strong>${cookieMoney(payment.amount || 0)}</strong>
-                <button class="text-button" data-cookie-remove-payment="${escapeAttr(payment.id)}" data-cookie-kid-id="${escapeAttr(kid.id)}" type="button">Remove</button>
-              </header>
               <div class="cookie-field-grid">
-                <label>Payment date<input data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-payment-id="${escapeAttr(payment.id)}" data-cookie-payment-field="date" type="date" value="${escapeAttr(payment.date || "")}" /></label>
-                <label>Order<select data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-payment-id="${escapeAttr(payment.id)}" data-cookie-payment-field="orderId">${cookieOrderOptions(payment.orderId || "")}</select></label>
-                <label>Amount<input data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-payment-id="${escapeAttr(payment.id)}" data-cookie-payment-field="amount" type="number" min="0" step="1" value="${escapeAttr(payment.amount || "")}" /></label>
-                <label>Method<select data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-payment-id="${escapeAttr(payment.id)}" data-cookie-payment-field="method">${COOKIE_PAYMENT_METHODS.map((method) => `<option value="${escapeAttr(method)}" ${payment.method === method ? "selected" : ""}>${escapeHtml(method || "Choose method")}</option>`).join("")}</select></label>
-                <label class="wide-field">Notes<input data-cookie-kid-id="${escapeAttr(kid.id)}" data-cookie-payment-id="${escapeAttr(payment.id)}" data-cookie-payment-field="notes" type="text" placeholder="Optional note" value="${escapeAttr(payment.notes || "")}" /></label>
+                <label>Pick up date<input name="date" type="date" value="${today()}" /></label>
+                <label>Order<select name="orderId">${cookieOrderOptions(activeCookieOrders()[0]?.id || "")}</select></label>
+                <label>Flavour<select name="flavor">${COOKIE_FLAVORS.map((flavor) => `<option value="${escapeAttr(flavor)}">${escapeHtml(flavor)}</option>`).join("")}</select></label>
+                <label>Cases<input name="cases" type="number" min="0" step="1" value="0" /></label>
+                <label>Boxes<input name="boxes" type="number" min="0" step="1" value="0" /></label>
+                <label class="wide-field">Notes<input name="notes" type="text" placeholder="Optional note" /></label>
               </div>
-            </article>
-          `).join("") || `<div class="empty-box">No payments recorded yet.</div>`}
+              <button class="primary-button" type="submit">Save pickup</button>
+            </form>
+            <form class="cookie-quick-form cookie-payment-form" data-cookie-payment-form data-cookie-kid-id="${escapeAttr(kid.id)}">
+              <div class="cookie-form-heading">
+                <h3>Add payment</h3>
+                <span>Money received</span>
+              </div>
+              <div class="cookie-field-grid">
+                <label>Payment date<input name="date" type="date" value="${today()}" /></label>
+                <label>Order<select name="orderId">${cookieOrderOptions(activeCookieOrders()[0]?.id || "")}</select></label>
+                <label>$ amount<input name="amount" type="number" min="0" step="1" placeholder="0" /></label>
+                <label>Method<select name="method">${COOKIE_PAYMENT_METHODS.map((method) => `<option value="${escapeAttr(method)}">${escapeHtml(method || "Choose method")}</option>`).join("")}</select></label>
+                <label>Other method<input name="methodOther" type="text" placeholder="If Other" /></label>
+                <label class="wide-field">Notes<input name="notes" type="text" placeholder="Optional note" /></label>
+              </div>
+              <button class="primary-button" type="submit">Save payment</button>
+            </form>
           </div>
+          <section class="cookie-record-ledger">
+            <div class="cookie-detail-heading">
+              <div>
+                <h3>Records</h3>
+                <p class="muted">Saved pickups and payments for ${escapeHtml(kid.name)}.</p>
+              </div>
+            </div>
+            ${cookieRecordTable(kid, activePickups, activePayments)}
+          </section>
         </div>
       </article>
     `;
+}
+
+function cookieOrderName(orderId = "") {
+  if (!orderId) return "No order";
+  return cookieOrders().find((order) => order.id === orderId)?.name || "Removed order";
+}
+
+function cookieRecordTable(kid, pickups = [], payments = []) {
+  const records = [
+    ...pickups.map((pickup) => ({
+      type: "Pickup",
+      date: pickup.date || "",
+      order: cookieOrderName(pickup.orderId),
+      details: `${pickup.flavor || "Mint"} - ${cookieNumber(pickup.cases)} cases, ${cookieNumber(pickup.boxes)} boxes`,
+      amount: cookieMoney(cookiePickupOwed(pickup)),
+      notes: pickup.notes || "",
+      action: `<button class="text-button" data-cookie-remove-pickup="${escapeAttr(pickup.id)}" data-cookie-kid-id="${escapeAttr(kid.id)}" type="button">Remove</button>`,
+    })),
+    ...payments.map((payment) => ({
+      type: "Payment",
+      date: payment.date || "",
+      order: cookieOrderName(payment.orderId),
+      details: cookiePaymentMethodLabel(payment),
+      amount: cookieMoney(payment.amount || 0),
+      notes: payment.notes || "",
+      action: `<button class="text-button" data-cookie-remove-payment="${escapeAttr(payment.id)}" data-cookie-kid-id="${escapeAttr(kid.id)}" type="button">Remove</button>`,
+    })),
+  ].sort((a, b) => String(b.date).localeCompare(String(a.date)));
+
+  if (!records.length) return `<div class="empty-box">No pickup or payment records yet.</div>`;
+  return `
+    <div class="cookie-record-table-wrap">
+      <table class="cookie-record-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Type</th>
+            <th>Order</th>
+            <th>Details</th>
+            <th>Amount</th>
+            <th>Notes</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${records.map((record) => `
+            <tr class="cookie-record-${record.type.toLowerCase()}">
+              <td>${escapeHtml(formatDate(record.date) || "")}</td>
+              <td><span class="cookie-entry-type">${escapeHtml(record.type)}</span></td>
+              <td>${escapeHtml(record.order)}</td>
+              <td>${escapeHtml(record.details)}</td>
+              <td><strong>${escapeHtml(record.amount)}</strong></td>
+              <td>${escapeHtml(record.notes)}</td>
+              <td>${record.action}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
 }
 
 function renderCookieSummaryView() {
@@ -3425,9 +3691,9 @@ function renderCookieSummaryView() {
         <tbody>
           ${sortedKids().map((kid) => {
             const row = cookieRowForKid(kid.id);
-            const summary = cookieRowSummary(row);
+            const summary = cookieRowSummary(row, { activeOnly: true });
             const paymentNotes = (row.payments || []).map((payment) => payment.notes).filter(Boolean).join("; ");
-            const byOrder = cookieOrders()
+            const byOrder = activeCookieOrders()
               .map((order) => {
                 const boxes = (row.pickups || [])
                   .filter((pickup) => pickup.orderId === order.id)
@@ -3546,13 +3812,25 @@ function handleCookieTrackerInput(event) {
   const payment = row.payments.find((item) => item.id === paymentInput.dataset.cookiePaymentId);
   if (!payment) return;
   const field = paymentInput.dataset.cookiePaymentField;
-  payment[field] = field === "amount" ? cookieNumber(paymentInput.value) : paymentInput.value;
+  payment[field] = field === "amount" ? cookieNumber(paymentInput.value) : field === "method" ? normalizeCookiePaymentMethod(paymentInput.value) : paymentInput.value;
   saveState();
-  if (field === "orderId") {
+  if (field === "orderId" || field === "method") {
     renderCookieTracker();
     return;
   }
   updateCookieComputedDisplay(paymentInput.dataset.cookieKidId);
+}
+
+function handleCookieOrderInput(event) {
+  const input = event.target.closest("[data-cookie-order-id][data-cookie-order-field]");
+  if (!input) return;
+  const order = cookieOrders().find((item) => item.id === input.dataset.cookieOrderId);
+  if (!order) return;
+  const field = input.dataset.cookieOrderField;
+  order[field] = field === "name" ? input.value : cookieNumber(input.value);
+  saveState();
+  renderCookieTotals();
+  renderCookieOrderProgress();
 }
 
 function loadPlanIntoForm(plan) {
@@ -3643,15 +3921,15 @@ function renderKidBadges() {
   const kids = visibleKidBadgeRows();
   const summaryMode = kidBadgeMode === "summary";
   const handoutMode = kidBadgeMode === "handouts";
-  const badges = summaryMode || handoutMode ? summaryBadgesForKids(kids) : [...state.badges].sort(compareBadges);
+  const badges = handoutMode ? summaryBadgesForKids(kids) : [...state.badges].sort(compareBadges);
 
   if (!kids.length) {
     $("#kidBadgeCards").innerHTML = emptyState("No Embers to show.");
     return;
   }
 
-  if ((summaryMode || handoutMode) && !badges.length) {
-    $("#kidBadgeCards").innerHTML = emptyState(handoutMode ? "No earned badges to hand out yet." : "No earned badges to summarize yet.");
+  if (handoutMode && !badges.length) {
+    $("#kidBadgeCards").innerHTML = emptyState("No earned badges to hand out yet.");
     return;
   }
 
@@ -3679,7 +3957,7 @@ function renderKidBadges() {
               ${badges.map((badge) => {
                 const progress = badgeProgress(kid.id, badge);
                 const cellClass = [
-                  progress.earned ? "is-earned" : progress.completedCount ? "is-progress" : "",
+                  progress.earned ? "is-earned" : "",
                   summaryMode && progress.earned ? "summary-earned-cell" : "",
                   summaryMode && !progress.earned ? "summary-empty-cell" : "",
                   isProgramAreaBadge(badge) ? "program-area-col" : "",
@@ -3695,7 +3973,7 @@ function renderKidBadges() {
 }
 
 function badgeSummaryCell(progress) {
-  return progress.earned ? `<span class="summary-earned-label">Earned</span>` : `<span class="summary-blank-label">-</span>`;
+  return progress.earned ? `<span class="summary-earned-label">Earned</span>` : `<span class="summary-blank-label"></span>`;
 }
 
 function badgeHandoutCell(kid, badge, progress) {
@@ -3762,6 +4040,7 @@ function renderPatrolPointsSheetKeepingPosition() {
 }
 
 function badgeMatrixCell(kid, badge, progress) {
+  if (isCriteriaBadge(badge)) return badgeCriteriaCell(kid, badge, progress);
   const max = progress.displayMax || progress.needed;
   return `
     <label class="matrix-count-editor ${manualBadgeAdjustment(kid.id, badge.id) ? "is-manual" : ""}">
@@ -3778,6 +4057,39 @@ function badgeMatrixCell(kid, badge, progress) {
       <span>/${escapeHtml(max)}</span>
     </label>
     ${progress.earned ? `<small class="matrix-earned-label">Earned</small>` : ""}
+  `;
+}
+
+function badgeCriteriaCell(kid, badge, progress) {
+  const selected = new Set(selectedCriteriaIds(kid.id, badge));
+  const baseline = new Set(baselineRequirementIdsForKidBadge(kid.id, badge.id));
+  const max = progress.displayMax || badge.requirements.length || progress.needed;
+  return `
+    <details class="criteria-badge-cell ${progress.earned ? "is-earned" : ""}">
+      <summary>
+        <span>${escapeHtml(progress.completedCount)}/${escapeHtml(max)}</span>
+        ${progress.earned ? `<small>Earned</small>` : `<small>${escapeHtml(progress.needed)} needed</small>`}
+      </summary>
+      <div class="criteria-check-list">
+        <div class="criteria-list-title">
+          <strong>${escapeHtml(kid.name)}</strong>
+          <span>${escapeHtml(badge.name)}</span>
+        </div>
+        ${(badge.requirements || []).map((requirement) => `
+          <label class="criteria-check-row ${baseline.has(requirement.id) ? "is-baseline" : ""}">
+            <input
+              type="checkbox"
+              data-criteria-kid-id="${escapeAttr(kid.id)}"
+              data-criteria-badge-id="${escapeAttr(badge.id)}"
+              data-criteria-requirement-id="${escapeAttr(requirement.id)}"
+              aria-label="${escapeAttr(`${kid.name} ${badge.name}: ${requirement.title}`)}"
+              ${selected.has(requirement.id) ? "checked" : ""}
+            />
+            <span>${escapeHtml(requirement.title)}</span>
+          </label>
+        `).join("")}
+      </div>
+    </details>
   `;
 }
 
@@ -4355,11 +4667,13 @@ function renderAll() {
   renderKidBadges();
   renderPatrolPointsSheet();
   renderPlanning();
+  renderNotes();
   renderCookieTracker();
   renderChatBadgeNeeds();
   renderHistory();
   renderDriveSyncSettings();
   renderAppScriptSyncSettings();
+  renderBranchCopy();
   queueMeetingBadgePanelSync();
 }
 
@@ -4457,9 +4771,10 @@ function resetBadgeForm() {
   $("#badgeName").readOnly = false;
   $("#badgeArea").value = "";
   $("#badgeArea").readOnly = false;
+  if ($("#badgeProgressMode")) $("#badgeProgressMode").value = "events";
   $("#badgeRequired").value = "1";
   $("#badgeRequirements").value = "";
-  $("#badgeFormTitle").textContent = "Create a Badge";
+  $("#badgeFormTitle").textContent = "Customize Badge/Award criteria";
 }
 
 function downloadFile(filename, content, type) {
@@ -4474,12 +4789,58 @@ function downloadFile(filename, content, type) {
   URL.revokeObjectURL(url);
 }
 
+function backupFileName() {
+  const base = unitTrackerDisplayName()
+    .replace(/\btracker\b/ig, "")
+    .replace(/[^a-z0-9]+/gi, "-")
+    .replace(/^-|-$/g, "")
+    .toLowerCase() || "tracker";
+  const stamp = new Date()
+    .toISOString()
+    .slice(0, 16)
+    .replace("T", "-")
+    .replace(":", "");
+  return `${base}-tracker-backup-${stamp}.json`;
+}
+
+async function saveJsonBackup() {
+  const filename = backupFileName();
+  const content = JSON.stringify(trackerPayloadObject(), null, 2);
+  if (window.showSaveFilePicker) {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: filename,
+        types: [{
+          description: "Tracker JSON backup",
+          accept: { "application/json": [".json"] },
+        }],
+      });
+      const writable = await handle.createWritable();
+      await writable.write(content);
+      await writable.close();
+      showToast("Backup saved.");
+      return;
+    } catch (error) {
+      if (error?.name === "AbortError") return;
+    }
+  }
+  downloadFile(filename, content, "application/json");
+  showToast("Backup downloaded.");
+}
+
 function exportJson() {
-  downloadFile(
-    `ember-badge-studio-backup-${today()}.json`,
-    JSON.stringify(trackerPayloadObject(), null, 2),
-    "application/json"
-  );
+  saveJsonBackup();
+}
+
+async function importJsonBackup(file) {
+  if (!file) return;
+  if (!window.confirm("Restore this backup? It will replace the tracker currently open in this browser.")) return;
+  const imported = JSON.parse(await file.text());
+  state = normalizeState(imported);
+  saveState();
+  renderAll();
+  switchTab("planning");
+  showToast("Backup restored.");
 }
 
 function exportProgressCsv() {
@@ -4530,9 +4891,9 @@ function removeKidAndConnectedData(kidId) {
   if (state.cookieTracker?.rows) delete state.cookieTracker.rows[kidId];
   state.badgeHandouts = Object.fromEntries(Object.entries(state.badgeHandouts || {}).filter(([key]) => key.split("|")[0] !== kidId));
   state.manualBadgeAdjustments = Object.fromEntries(Object.entries(state.manualBadgeAdjustments || {}).filter(([key]) => key.split("|")[0] !== kidId));
+  state.manualCriteriaSelections = Object.fromEntries(Object.entries(state.manualCriteriaSelections || {}).filter(([key]) => key.split("|")[0] !== kidId));
   state.baselineCredits = (state.baselineCredits || []).filter((entry) => entry.kidId !== kidId);
   state.patrolPointSpending = (state.patrolPointSpending || []).filter((entry) => entry.kidId !== kidId);
-  if (!state.kids.length) state.settings.rosterChecked = false;
   state.meetings = state.meetings.map((meeting) => {
     const emberPoints = { ...(meeting.emberPoints || {}) };
     delete emberPoints[kidId];
@@ -4606,6 +4967,7 @@ document.addEventListener("click", (event) => {
     $("#badgeName").readOnly = !isCustomBadge(badge);
     $("#badgeArea").value = badge.area || "";
     $("#badgeArea").readOnly = !isCustomBadge(badge);
+    if ($("#badgeProgressMode")) $("#badgeProgressMode").value = isCriteriaBadge(badge) ? "criteria" : "events";
     $("#badgeRequired").value = Number(badge.requiredCount) || badge.requirements.length;
     $("#badgeRequirements").value = badge.requirements.map((requirement) => requirement.title).join("\n");
     $("#badgeFormTitle").textContent = "Edit badge criteria";
@@ -4621,6 +4983,7 @@ document.addEventListener("click", (event) => {
     state.badges = state.badges.filter((badge) => badge.id !== id);
     state.baselineCredits = (state.baselineCredits || []).filter((credit) => credit.badgeId !== id);
     state.manualBadgeAdjustments = Object.fromEntries(Object.entries(state.manualBadgeAdjustments || {}).filter(([key]) => key.split("|")[1] !== id));
+    state.manualCriteriaSelections = Object.fromEntries(Object.entries(state.manualCriteriaSelections || {}).filter(([key]) => key.split("|")[1] !== id));
     state.badgeHandouts = Object.fromEntries(Object.entries(state.badgeHandouts || {}).filter(([key]) => key.split("|")[1] !== id));
     state.meetings = state.meetings.map((meeting) => ({
       ...meeting,
@@ -4806,10 +5169,11 @@ $("#kidForm").addEventListener("submit", (event) => {
   event.preventDefault();
   const name = $("#kidName").value.trim();
   if (!name) return;
+  const patrol = selectedPatrolFromForm();
   state.kids.push({
     id: uid("kid"),
     name,
-    patrol: $("#kidPatrol").value.trim(),
+    patrol,
     year: emberYearValue($("#kidYear").value),
     leadership: leadershipValue($("#kidLeadership").value),
     membershipYear: membershipYearValue($("#kidMembershipYear").value),
@@ -4821,19 +5185,35 @@ $("#kidForm").addEventListener("submit", (event) => {
   showToast("Ember added.");
 });
 
+$("#kidPatrol")?.addEventListener("change", (event) => {
+  const otherInput = $("#kidPatrolOther");
+  setOtherPatrolInput(event.target, otherInput);
+  if (event.target.value === OTHER_PATROL_VALUE) otherInput?.focus();
+});
+
 $("#kidTable").addEventListener("change", (event) => {
   const yearInput = event.target.closest("[data-kid-year]");
   const patrolInput = event.target.closest("[data-kid-patrol]");
+  const patrolOtherInput = event.target.closest("[data-kid-patrol-other]");
   const leadershipInput = event.target.closest("[data-kid-leadership]");
   const membershipInput = event.target.closest("[data-kid-membership]");
   const returningInput = event.target.closest("[data-kid-returning]");
-  const input = yearInput || patrolInput || leadershipInput || membershipInput || returningInput;
+  const input = yearInput || patrolInput || patrolOtherInput || leadershipInput || membershipInput || returningInput;
   if (!input) return;
-  const kidId = yearInput?.dataset.kidYear || patrolInput?.dataset.kidPatrol || leadershipInput?.dataset.kidLeadership || membershipInput?.dataset.kidMembership || returningInput?.dataset.kidReturning;
+  const kidId = yearInput?.dataset.kidYear || patrolInput?.dataset.kidPatrol || patrolOtherInput?.dataset.kidPatrolOther || leadershipInput?.dataset.kidLeadership || membershipInput?.dataset.kidMembership || returningInput?.dataset.kidReturning;
   const kid = state.kids.find((item) => item.id === kidId);
   if (!kid) return;
   if (yearInput) kid.year = emberYearValue(input.value);
-  if (patrolInput) kid.patrol = input.value.trim();
+  if (patrolInput) {
+    if (input.value === OTHER_PATROL_VALUE) {
+      const otherInput = input.parentElement?.querySelector("[data-kid-patrol-other]");
+      setOtherPatrolInput(input, otherInput);
+      otherInput?.focus();
+      return;
+    }
+    kid.patrol = input.value.trim();
+  }
+  if (patrolOtherInput) kid.patrol = input.value.trim();
   if (leadershipInput) kid.leadership = leadershipValue(input.value);
   if (membershipInput) kid.membershipYear = membershipYearValue(input.value);
   if (returningInput) kid.returningStatus = returningValue(input.value);
@@ -4861,7 +5241,11 @@ $("#badgeForm").addEventListener("submit", (event) => {
     area,
     name,
     Math.max(1, Number($("#badgeRequired").value) || requirementTitles.length),
-    requirementTitles
+    requirementTitles,
+    {
+      imageUrl: existing?.imageUrl || "",
+      progressMode: $("#badgeProgressMode")?.value === "criteria" ? "criteria" : "events",
+    }
   );
   if (existingIndex >= 0) state.badges[existingIndex] = badge;
   else state.badges.push(badge);
@@ -4969,8 +5353,77 @@ $("#planningClearShown").addEventListener("click", () => {
   renderPlanningBadges();
 });
 
+$("#addPlannerNote")?.addEventListener("click", createPlannerNote);
+
+$("#deletePlannerNote")?.addEventListener("click", () => {
+  const note = selectedPlannerNote();
+  if (!note) return;
+  state.notes = plannerNotes().filter((item) => item.id !== note.id);
+  selectedNoteId = state.notes[0]?.id || "";
+  saveState();
+  renderNotes();
+  showToast("Note page deleted.");
+});
+
+$("#notesList")?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-note-id]");
+  if (!button) return;
+  selectedNoteId = button.dataset.noteId;
+  renderNotes();
+});
+
+$("#noteTitle")?.addEventListener("input", scheduleNoteSave);
+$("#noteContent")?.addEventListener("input", scheduleNoteSave);
+$("#noteTitle")?.addEventListener("blur", flushNoteSave);
+$("#noteContent")?.addEventListener("blur", flushNoteSave);
+
 $("#cookieRows").addEventListener("input", handleCookieTrackerInput);
 $("#cookieRows").addEventListener("change", handleCookieTrackerInput);
+$("#cookieRows").addEventListener("submit", (event) => {
+  const pickupForm = event.target.closest("[data-cookie-pickup-form]");
+  const paymentForm = event.target.closest("[data-cookie-payment-form]");
+  if (!pickupForm && !paymentForm) return;
+  event.preventDefault();
+
+  if (pickupForm) {
+    const kidId = pickupForm.dataset.cookieKidId;
+    const row = cookieRowForKid(kidId);
+    const pickup = {
+      id: uid("cookie"),
+      date: pickupForm.elements.date.value || today(),
+      orderId: pickupForm.elements.orderId.value || "",
+      flavor: pickupForm.elements.flavor.value || "Mint",
+      cases: cookieNumber(pickupForm.elements.cases.value),
+      boxes: cookieNumber(pickupForm.elements.boxes.value),
+      notes: pickupForm.elements.notes.value.trim(),
+    };
+    if (!pickup.cases && !pickup.boxes) return showToast("Enter cases or boxes for the pickup.");
+    row.pickups.push(pickup);
+    saveState();
+    renderCookieTracker();
+    showToast("Pickup saved.");
+    return;
+  }
+
+  if (paymentForm) {
+    const kidId = paymentForm.dataset.cookieKidId;
+    const row = cookieRowForKid(kidId);
+    const payment = {
+      id: uid("cookie-payment"),
+      date: paymentForm.elements.date.value || today(),
+      orderId: paymentForm.elements.orderId.value || "",
+      amount: cookieNumber(paymentForm.elements.amount.value),
+      method: normalizeCookiePaymentMethod(paymentForm.elements.method.value),
+      methodOther: paymentForm.elements.methodOther.value.trim(),
+      notes: paymentForm.elements.notes.value.trim(),
+    };
+    if (!payment.amount) return showToast("Enter a payment amount.");
+    row.payments.push(payment);
+    saveState();
+    renderCookieTracker();
+    showToast("Payment saved.");
+  }
+});
 $("#cookieRows").addEventListener("click", (event) => {
   const openKid = event.target.closest("[data-cookie-open-kid]");
   if (openKid) {
@@ -5024,7 +5477,14 @@ $("#cookieOrderForm")?.addEventListener("submit", (event) => {
   const name = $("#cookieOrderName").value.trim();
   const totalCost = cookieNumber($("#cookieOrderTotal").value);
   if (!name) return showToast("Name the cookie order.");
-  cookieOrders().push(normalizeCookieOrder({ name, totalCost }));
+  cookieOrders().push(normalizeCookieOrder({
+    name,
+    totalCost,
+    chocolateCases: $("#cookieOrderChocolateCases") ? cookieNumber($("#cookieOrderChocolateCases").value) : 0,
+    mintCases: $("#cookieOrderMintCases") ? cookieNumber($("#cookieOrderMintCases").value) : 0,
+    surplusChocolateCases: $("#cookieOrderSurplusChocolateCases") ? cookieNumber($("#cookieOrderSurplusChocolateCases").value) : 0,
+    surplusMintCases: $("#cookieOrderSurplusMintCases") ? cookieNumber($("#cookieOrderSurplusMintCases").value) : 0,
+  }));
   state.cookieTracker.view = "progress";
   saveState();
   event.currentTarget.reset();
@@ -5032,7 +5492,33 @@ $("#cookieOrderForm")?.addEventListener("submit", (event) => {
   showToast("Cookie order added.");
 });
 
+$("#cookieOrderProgress")?.addEventListener("change", handleCookieOrderInput);
+
 $("#cookieOrderProgress")?.addEventListener("click", (event) => {
+  const archive = event.target.closest("[data-archive-cookie-order]");
+  if (archive) {
+    const order = cookieOrders().find((item) => item.id === archive.dataset.archiveCookieOrder);
+    if (order) {
+      order.archived = true;
+      saveState();
+      renderCookieTracker();
+      showToast("Cookie order archived.");
+    }
+    return;
+  }
+
+  const unarchive = event.target.closest("[data-unarchive-cookie-order]");
+  if (unarchive) {
+    const order = cookieOrders().find((item) => item.id === unarchive.dataset.unarchiveCookieOrder);
+    if (order) {
+      order.archived = false;
+      saveState();
+      renderCookieTracker();
+      showToast("Cookie order restored.");
+    }
+    return;
+  }
+
   const remove = event.target.closest("[data-remove-cookie-order]");
   if (!remove) return;
   openCookieRemoveModal("order", "", remove.dataset.removeCookieOrder);
@@ -5057,16 +5543,6 @@ $("#cookieSummaryMode").addEventListener("click", () => {
 });
 
 $("#resetBadgeForm").addEventListener("click", resetBadgeForm);
-$("#rosterChecked").addEventListener("change", (event) => {
-  if (event.target.checked && !state.kids.length) {
-    event.target.checked = false;
-    return showToast("Add Embers before marking the roster checked.");
-  }
-  state.settings.rosterChecked = event.target.checked;
-  saveState();
-  renderAll();
-  showToast(event.target.checked ? "Roster marked checked." : "Roster marked unchecked.");
-});
 $("#badgeTileSearch").addEventListener("input", renderLogBadgeTiles);
 $("#badgeTilePicker").addEventListener("input", (event) => {
   const input = event.target.closest("[data-log-badge-credit]");
@@ -5130,6 +5606,28 @@ function handleManualBadgeConfirmationRequest(event) {
   return true;
 }
 
+function handleCriteriaBadgeEdit(event, options = {}) {
+  const input = event.target.closest("[data-criteria-kid-id][data-criteria-badge-id][data-criteria-requirement-id]");
+  if (!input) return false;
+  if (!badgeEditConfirmationEnabled()) {
+    setCriteriaSelection(input.dataset.criteriaKidId, input.dataset.criteriaBadgeId, input.dataset.criteriaRequirementId, input.checked);
+    saveState();
+    if (options.render) renderKidBadgesKeepingPosition();
+    return true;
+  }
+  const cell = input.closest(".criteria-badge-cell");
+  cell?.querySelector(".criteria-confirm-row")?.remove();
+  const confirmRow = document.createElement("span");
+  confirmRow.className = "criteria-confirm-row";
+  confirmRow.innerHTML = `
+    <button class="primary-button" data-confirm-criteria="${escapeAttr(input.checked ? "yes" : "no")}" data-confirm-kid-id="${escapeAttr(input.dataset.criteriaKidId)}" data-confirm-badge-id="${escapeAttr(input.dataset.criteriaBadgeId)}" data-confirm-requirement-id="${escapeAttr(input.dataset.criteriaRequirementId)}" type="button">Confirm</button>
+    <button class="text-button" data-cancel-criteria type="button">Cancel</button>
+  `;
+  input.closest(".criteria-check-row")?.append(confirmRow);
+  cell?.classList.add("is-pending");
+  return true;
+}
+
 function handleBadgeHandoutEdit(event, options = {}) {
   const input = event.target.closest("[data-handout-kid-id][data-handout-badge-id]");
   if (!input) return false;
@@ -5153,6 +5651,10 @@ function handleBadgeHandoutEdit(event, options = {}) {
 }
 
 $("#kidBadgeCards").addEventListener("change", (event) => {
+  if (handleCriteriaBadgeEdit(event, { render: true })) {
+    showToast(badgeEditConfirmationEnabled() ? "Confirm the criteria change." : "Badge criteria updated.");
+    return;
+  }
   if (handleBadgeHandoutEdit(event, { render: true })) {
     showToast(badgeEditConfirmationEnabled() ? "Confirm the badge handout change." : "Badge handout updated.");
     return;
@@ -5169,6 +5671,24 @@ $("#kidBadgeCards").addEventListener("input", (event) => {
 });
 
 $("#kidBadgeCards").addEventListener("click", (event) => {
+  const criteriaConfirm = event.target.closest("[data-confirm-criteria]");
+  if (criteriaConfirm) {
+    setCriteriaSelection(
+      criteriaConfirm.dataset.confirmKidId,
+      criteriaConfirm.dataset.confirmBadgeId,
+      criteriaConfirm.dataset.confirmRequirementId,
+      criteriaConfirm.dataset.confirmCriteria === "yes"
+    );
+    saveState();
+    renderKidBadgesKeepingPosition();
+    showToast("Badge criteria updated.");
+    return;
+  }
+  if (event.target.closest("[data-cancel-criteria]")) {
+    renderKidBadgesKeepingPosition();
+    showToast("Criteria change cancelled.");
+    return;
+  }
   const manualConfirm = event.target.closest("[data-confirm-manual-badge]");
   if (manualConfirm) {
     setManualBadgeCount(manualConfirm.dataset.confirmKidId, manualConfirm.dataset.confirmBadgeId, manualConfirm.dataset.confirmCount);
@@ -5477,38 +5997,6 @@ $("#markAllAbsent").addEventListener("click", () => {
   });
 });
 
-$("#seedDemo").addEventListener("click", () => {
-  const demo = buildDemoData();
-  state = remapToOfficialBadges(demo, demo.badges);
-  saveState();
-  renderAll();
-  showToast("Demo setup loaded.");
-});
-
-function handleLoadExcelKids() {
-  loadExcelRosterIntoState();
-  saveState();
-  renderAll();
-  showToast("Loaded 16 Embers from the Excel roster.");
-}
-
-$("#loadExcelKids").addEventListener("click", handleLoadExcelKids);
-$("#loadExcelKidsInline").addEventListener("click", handleLoadExcelKids);
-
-$("#loadExcelProgress").addEventListener("click", () => {
-  loadExcelProgressIntoState();
-  saveState();
-  renderAll();
-  showToast("Loaded current badge progress from the Excel sheet.");
-});
-
-$("#loadExcelAttendance").addEventListener("click", () => {
-  loadExcelAttendanceIntoState();
-  saveState();
-  renderAll();
-  showToast("Loaded attendance calendar from the Excel sheet.");
-});
-
 $("#clearData").addEventListener("click", () => {
   if (!confirm("Clear all Embers, badges, and meeting history from this browser?")) return;
   state = buildEmptyData();
@@ -5517,8 +6005,9 @@ $("#clearData").addEventListener("click", () => {
   showToast("All data cleared.");
 });
 
-$("#exportJson").addEventListener("click", exportJson);
-$("#exportJsonTop").addEventListener("click", exportJson);
+$("#exportJson").addEventListener("click", saveJsonBackup);
+$("#exportJsonTop").addEventListener("click", saveJsonBackup);
+$("#saveJsonBackup")?.addEventListener("click", saveJsonBackup);
 $("#exportCsv").addEventListener("click", exportProgressCsv);
 
 $("#loginDriveLoad")?.addEventListener("click", async () => {
@@ -5558,6 +6047,18 @@ $("#loginCodeCreate")?.addEventListener("click", async () => {
 
 ["#loginCodeEndpoint", "#loginTrackerCode", "#loginTrackerPin"].forEach((selector) => {
   $(selector)?.addEventListener("change", () => saveAppScriptSyncSettingsFromForm("login"));
+});
+
+$("#loginBranch")?.addEventListener("change", (event) => {
+  state.settings.branch = branchValue(event.target.value);
+  renderBranchCopy();
+});
+
+$("#loginTrackerCode")?.addEventListener("input", (event) => {
+  const title = event.target.value.trim().toUpperCase() || "Tracker";
+  $("#appTitle").textContent = title;
+  $("#loginAppTitle").textContent = title;
+  document.title = title;
 });
 
 $("#loginDriveChooser")?.addEventListener("click", async (event) => {
@@ -5732,21 +6233,20 @@ $("#loginOffline")?.addEventListener("click", () => {
   showToast("Opened offline. Pull latest when you reconnect.");
 });
 
-$("#importJson").addEventListener("change", async (event) => {
+async function handleImportJsonChange(event) {
   const file = event.target.files?.[0];
   if (!file) return;
   try {
-    const imported = JSON.parse(await file.text());
-    state = normalizeState(imported);
-    saveState();
-    renderAll();
-    showToast("Backup imported.");
+    await importJsonBackup(file);
   } catch {
     showToast("That file was not a valid backup.");
   } finally {
     event.target.value = "";
   }
-});
+}
+
+$("#importJson").addEventListener("change", handleImportJsonChange);
+$("#backupImportJson")?.addEventListener("change", handleImportJsonChange);
 
 window.addEventListener("resize", queueMeetingBadgePanelSync);
 if ("ResizeObserver" in window) {

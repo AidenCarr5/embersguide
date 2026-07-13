@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta http-equiv="Cache-Control" content="no-store" />
-    <title>Embers Tracker</title>
+    <title>Tracker</title>
     <link rel="icon" type="image/png" href="./assets/girl-guides-trefoil-icon.png" />
     <link rel="apple-touch-icon" href="./assets/girl-guides-trefoil-icon-1024.png" />
     <link rel="stylesheet" href="./styles.css?v=20260612-sync-protection" />
@@ -21,7 +21,7 @@
         </div>
       </div>
       <div class="header-actions">
-        <button class="quiet-button" id="exportJsonTop" type="button">Export backup</button>
+        <button class="quiet-button" id="exportJsonTop" type="button">Save backup</button>
         <button class="quiet-button" data-share-tracker type="button">Share tracker</button>
         <button class="quiet-button" id="switchTrackerTop" type="button">Switch tracker</button>
         <button class="primary-button" data-tab-target="log" type="button">Log meeting</button>
@@ -35,7 +35,9 @@
       <button class="tab" data-tab-target="patrol-points" type="button">Patrol Points</button>
       <button class="tab" data-tab-target="attendance" type="button">Roster</button>
       <button class="tab" data-tab-target="cookies" type="button">Cookies Tracker</button>
-      <button class="tab" data-tab-target="badges" type="button">Create a Badge</button>
+      <button class="tab" data-tab-target="badges" type="button">Customize Badge/Award criteria</button>
+      <button class="tab" data-tab-target="notes" type="button">Notes</button>
+      <button class="tab" data-tab-target="backups" type="button">Backups</button>
     </nav>
 
     <main>
@@ -45,7 +47,7 @@
             <img class="guides-logo-img" src="./assets/girl-guides-logo.png" alt="Girl Guides" />
             <div>
               <p class="eyebrow">Unit tracker sync</p>
-              <h1 id="loginAppTitle">Embers Tracker</h1>
+              <h1 id="loginAppTitle">Tracker</h1>
             </div>
           </div>
           <div class="login-copy">
@@ -82,6 +84,16 @@
                 <label>
                   Tracker name
                   <input id="loginNewTrackerName" type="text" placeholder="46th Windsor Embers" />
+                </label>
+                <label>
+                  Branch
+                  <select id="loginBranch">
+                    <option value="sparks">Sparks</option>
+                    <option value="embers" selected>Embers</option>
+                    <option value="guides">Guides</option>
+                    <option value="pathfinders">Pathfinders</option>
+                    <option value="rangers">Rangers</option>
+                  </select>
                 </label>
                 <label>
                   Shared PIN
@@ -225,6 +237,51 @@
         </div>
       </section>
 
+      <section id="notes" class="view">
+        <section class="surface notes-planner">
+          <div class="section-heading">
+            <h2>Notes</h2>
+            <div class="inline-actions">
+              <button class="quiet-button" id="addPlannerNote" type="button">New page</button>
+              <button class="text-button" id="deletePlannerNote" type="button">Delete page</button>
+            </div>
+          </div>
+          <div class="notes-layout">
+            <aside class="notes-sidebar" aria-label="Note pages">
+              <div id="notesList" class="notes-list"></div>
+            </aside>
+            <section class="notes-editor">
+              <input id="noteTitle" class="note-title-input" type="text" placeholder="Page title" />
+              <textarea id="noteContent" class="note-content-input" placeholder="Type notes here"></textarea>
+            </section>
+          </div>
+        </section>
+      </section>
+
+      <section id="backups" class="view">
+        <section class="surface backup-center">
+          <div class="section-heading">
+            <div>
+              <h2>Backups</h2>
+              <span class="small-note">Save or restore a tracker JSON file.</span>
+            </div>
+          </div>
+          <div class="backup-action-grid">
+            <article class="backup-action-card">
+              <h3>Save backup</h3>
+              <button class="primary-button" id="saveJsonBackup" type="button">Save backup JSON</button>
+            </article>
+            <article class="backup-action-card">
+              <h3>Restore backup</h3>
+              <label class="file-button">
+                Upload backup JSON
+                <input id="backupImportJson" type="file" accept="application/json" />
+              </label>
+            </article>
+          </div>
+        </section>
+      </section>
+
       <section id="itinerary" class="view hidden-view">
         <section class="surface itinerary-page">
           <div class="section-heading">
@@ -283,12 +340,22 @@
             <form id="cookieOrderForm" class="cookie-order-form">
               <label>
                 Cookie order
-                <input id="cookieOrderName" type="text" placeholder="Fall cookies, Winter cookies" required />
+                <input id="cookieOrderName" type="text" placeholder="" required />
               </label>
               <label>
-                Unit order cost
-                <input id="cookieOrderTotal" type="number" min="0" step="1" placeholder="200" required />
+                $ amount
+                <input id="cookieOrderTotal" type="number" min="0" step="1" placeholder="" />
               </label>
+              <fieldset class="cookie-order-fieldset">
+                <legend>Unit order</legend>
+                <label>Chocolate/Vanilla cases<input id="cookieOrderChocolateCases" type="number" min="0" step="1" value="0" /></label>
+                <label>Mint cases<input id="cookieOrderMintCases" type="number" min="0" step="1" value="0" /></label>
+              </fieldset>
+              <fieldset class="cookie-order-fieldset">
+                <legend>Surplus</legend>
+                <label>Chocolate/Vanilla cases<input id="cookieOrderSurplusChocolateCases" type="number" min="0" step="1" value="0" /></label>
+                <label>Mint cases<input id="cookieOrderSurplusMintCases" type="number" min="0" step="1" value="0" /></label>
+              </fieldset>
               <button class="quiet-button" type="submit">Add order</button>
             </form>
           </div>
@@ -365,10 +432,6 @@
           <section class="surface">
             <div class="section-heading">
               <h2>Roster</h2>
-              <label class="switch-row">
-                <input id="rosterChecked" type="checkbox" />
-                <span>Roster checked</span>
-              </label>
             </div>
             <form id="kidForm" class="inline-form">
               <label>
@@ -379,7 +442,9 @@
                 Patrol
                 <select id="kidPatrol">
                   <option value="">Choose patrol</option>
+                  <option value="__other__">Other</option>
                 </select>
+                <input id="kidPatrolOther" class="hidden" type="text" placeholder="Type patrol" hidden />
               </label>
               <label>
                 Ember year
@@ -399,13 +464,22 @@
                 </select>
               </label>
               <label>
-                Membership
+                GGC membership
                 <select id="kidMembershipYear">
                   <option value="">Choose membership year</option>
                   <option value="1">1st year</option>
                   <option value="2">2nd year</option>
                   <option value="3">3rd year</option>
                   <option value="4">4th year</option>
+                  <option value="5">5th year</option>
+                  <option value="6">6th year</option>
+                  <option value="7">7th year</option>
+                  <option value="8">8th year</option>
+                  <option value="9">9th year</option>
+                  <option value="10">10th year</option>
+                  <option value="11">11th year</option>
+                  <option value="12">12th year</option>
+                  <option value="13">13th year</option>
                 </select>
               </label>
               <label>
@@ -420,7 +494,6 @@
                 </select>
               </label>
               <button class="primary-button" type="submit">Add Ember</button>
-              <button class="quiet-button" id="loadExcelKidsInline" type="button">Load Excel Embers</button>
             </form>
             <div class="table-wrap">
               <table>
@@ -430,7 +503,7 @@
                     <th>Ember year</th>
                     <th>Patrol</th>
                     <th>Leadership</th>
-                    <th>Membership</th>
+                    <th>GGC membership</th>
                     <th>Returning</th>
                     <th></th>
                   </tr>
@@ -446,7 +519,7 @@
         <div class="badge-layout">
           <section class="surface">
             <div class="section-heading">
-              <h2 id="badgeFormTitle">Create a Badge</h2>
+              <h2 id="badgeFormTitle">Customize Badge/Award criteria</h2>
               <button class="text-button" id="resetBadgeForm" type="button">New badge</button>
             </div>
             <form id="badgeForm" class="badge-form">
@@ -458,6 +531,13 @@
               <label>
                 Program area
                 <input id="badgeArea" type="text" placeholder="Custom Badges" />
+              </label>
+              <label>
+                Tracking style
+                <select id="badgeProgressMode">
+                  <option value="events">Event count</option>
+                  <option value="criteria">Select criteria</option>
+                </select>
               </label>
               <label>
                 Criteria needed to earn
@@ -558,11 +638,7 @@
             <span class="small-note">Everything is stored in this browser until exported.</span>
           </div>
           <div class="data-actions">
-            <button class="quiet-button" id="loadExcelKids" type="button">Load Excel Embers</button>
-            <button class="quiet-button" id="loadExcelAttendance" type="button">Load Excel attendance history</button>
-            <button class="quiet-button" id="loadExcelProgress" type="button">Load Excel progress</button>
-            <button class="quiet-button" id="seedDemo" type="button">Load demo setup</button>
-            <button class="quiet-button" id="exportJson" type="button">Export JSON backup</button>
+            <button class="quiet-button" id="exportJson" type="button">Save JSON backup</button>
             <button class="quiet-button" data-share-tracker type="button">Share tracker</button>
             <button class="quiet-button" id="exportCsv" type="button">Export progress CSV</button>
             <label class="file-button">
@@ -776,8 +852,7 @@
     </div>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script src="./excel-attendance-data.js?v=20260612-sync-protection"></script>
-    <script src="./excel-progress-data.js?v=20260612-sync-protection"></script>
+    <script src="./branch-badge-catalog.js?v=20260612-branch-catalog"></script>
     <script src="./badge-knowledge.js?v=20260612-sync-protection"></script>
     <script src="./app.js?v=20260612-sync-protection"></script>
   </body>

@@ -11,6 +11,7 @@ function doPost(event) {
     if (action === "list") return jsonResponse(listTrackers(request));
     if (action === "adminpull") return jsonResponse(adminPullTracker(request));
     if (action === "adminpush") return jsonResponse(adminPushTracker(request));
+    if (action === "rename") return jsonResponse(renameTracker(request));
     return jsonResponse({ ok: false, error: "Unknown action." });
   } catch (error) {
     return jsonResponse({ ok: false, error: error.message || "Apps Script error." });
@@ -62,6 +63,10 @@ function trackerRecord(code) {
 
 function saveTrackerRecord(record) {
   PropertiesService.getScriptProperties().setProperty(propertyKey(record.code), JSON.stringify(record));
+}
+
+function deleteTrackerRecord(code) {
+  PropertiesService.getScriptProperties().deleteProperty(propertyKey(code));
 }
 
 function adminPinHash() {
@@ -149,6 +154,29 @@ function adminPushTracker(request) {
   DriveApp.getFileById(record.fileId).setContent(JSON.stringify(payload, null, 2));
   record.updatedAt = now;
   saveTrackerRecord(record);
+  return { ok: true, code: record.code, name: record.name, updatedAt: now };
+}
+
+function renameTracker(request) {
+  requireAdminAccess(request);
+  const oldCode = cleanCode(request.code);
+  const newCode = cleanCode(request.newCode);
+  if (!oldCode) throw new Error("Current tracker code is required.");
+  if (!newCode) throw new Error("New tracker code is required.");
+  const record = trackerRecord(oldCode);
+  if (!record) throw new Error("Tracker code was not found.");
+  if (oldCode !== newCode && trackerRecord(newCode)) throw new Error("That tracker code already exists. Try another name.");
+
+  const now = new Date().toISOString();
+  const name = String(request.name || "").trim();
+  const oldRecordCode = record.code;
+  record.code = newCode;
+  if (name) record.name = name;
+  record.updatedAt = now;
+
+  DriveApp.getFileById(record.fileId).setName(`${newCode}.json`);
+  saveTrackerRecord(record);
+  if (oldRecordCode !== newCode) deleteTrackerRecord(oldRecordCode);
   return { ok: true, code: record.code, name: record.name, updatedAt: now };
 }
 
