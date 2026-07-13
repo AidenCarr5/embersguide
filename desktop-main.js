@@ -4,10 +4,11 @@ const { app, BrowserWindow, dialog, shell } = require("electron");
 process.env.PORT = process.env.PORT || "8767";
 process.env.AI_PROVIDER = process.env.AI_PROVIDER || "ollama";
 
-require("./server");
+const localServer = require("./server");
 
-const trackerUrl = `http://127.0.0.1:${process.env.PORT}/`;
+const UPDATE_MANIFEST_URL = "https://raw.githubusercontent.com/AidenCarr5/embersguide/main/update.json";
 const RELEASE_API_URL = "https://api.github.com/repos/AidenCarr5/embersguide/releases/latest";
+const RELEASES_URL = "https://github.com/AidenCarr5/embersguide/releases/latest";
 
 function compareVersions(left, right) {
   const leftParts = String(left || "").replace(/^v/i, "").split(".").map((part) => Number.parseInt(part, 10) || 0);
@@ -20,9 +21,21 @@ function compareVersions(left, right) {
 }
 
 function installerAssetForPlatform(release) {
+  if (release?.assets && !Array.isArray(release.assets)) {
+    const url = release.assets[process.platform];
+    if (!url) return null;
+    return {
+      name: path.basename(new URL(url).pathname),
+      browser_download_url: url,
+    };
+  }
   const assets = Array.isArray(release?.assets) ? release.assets : [];
   const extension = process.platform === "darwin" ? ".dmg" : ".exe";
   return assets.find((asset) => String(asset.name || "").toLowerCase().endsWith(extension));
+}
+
+function releaseVersion(release) {
+  return String(release?.version || release?.tag_name || "").replace(/^v/i, "");
 }
 
 function setLauncherStatus(win, message) {
@@ -46,21 +59,44 @@ async function showManualUpdateMessage(win, message, detail = "") {
   });
 }
 
+async function openReleasesPage(win, message, detail = "") {
+  const choice = await dialog.showMessageBox(win, {
+    type: "warning",
+    buttons: ["Open downloads page", "OK"],
+    defaultId: 0,
+    cancelId: 1,
+    title: "Update check",
+    message,
+    detail,
+  });
+  if (choice.response === 0) {
+    const openError = await shell.openExternal(RELEASES_URL);
+    if (openError) throw new Error(openError);
+  }
+}
+
+async function fetchJson(url, headers = {}) {
+  const response = await fetch(`${url}${url.includes("?") ? "&" : "?"}_=${Date.now()}`, {
+    headers: { "User-Agent": "Embers-Tracker-Updater", ...headers },
+  });
+  if (!response.ok) throw new Error(`status ${response.status}`);
+  return response.json();
+}
+
+async function latestReleaseInfo() {
+  try {
+    return await fetchJson(UPDATE_MANIFEST_URL);
+  } catch {
+    return fetchJson(RELEASE_API_URL, { Accept: "application/vnd.github+json" });
+  }
+}
+
 async function checkForUpdates(win, { manual = false } = {}) {
   if (!app.isPackaged && !manual) return;
   try {
     setLauncherStatus(win, "Checking for updates...");
-    const response = await fetch(RELEASE_API_URL, {
-      headers: { "User-Agent": "Embers-Tracker-Updater" },
-    });
-    if (response.status === 404) {
-      setLauncherStatus(win, manual ? "No GitHub release has been published yet." : "Ready.");
-      if (manual) await showManualUpdateMessage(win, "No update release was found.");
-      return;
-    }
-    if (!response.ok) throw new Error(`GitHub returned status ${response.status}.`);
-    const release = await response.json();
-    const latestVersion = String(release.tag_name || "").replace(/^v/i, "");
+    const release = await latestReleaseInfo();
+    const latestVersion = releaseVersion(release);
     if (!latestVersion || compareVersions(latestVersion, app.getVersion()) <= 0) {
       setLauncherStatus(win, manual ? "You already have the latest version." : "Ready.");
       if (manual) {
@@ -104,12 +140,24 @@ async function checkForUpdates(win, { manual = false } = {}) {
   } catch (error) {
     setLauncherStatus(win, manual ? `Update check failed: ${error.message}` : "Ready.");
     if (manual) {
-      await showManualUpdateMessage(win, "Update check failed.", error.message || "Unknown error.");
+      await openReleasesPage(
+        win,
+        "Update check failed.",
+        `${error.message || "Unknown error."}\n\nYou can still open the downloads page and install the latest version manually.`
+      );
     }
   }
 }
 
-function createWindow() {
+async function createWindow() {
+  let trackerUrl = "http://127.0.0.1:8767/";
+  try {
+    await localServer.ready;
+    trackerUrl = localServer.getUrl();
+  } catch (error) {
+    await dialog.showErrorBox("Tracker server failed to start", error.message || "Unknown server error.");
+  }
+
   const win = new BrowserWindow({
     width: 460,
     height: 300,

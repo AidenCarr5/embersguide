@@ -4,6 +4,7 @@ const path = require("node:path");
 
 const ROOT = __dirname;
 const PORT = Number(process.env.PORT || 8767);
+const HOST = process.env.HOST || "127.0.0.1";
 const AI_PROVIDER = (process.env.AI_PROVIDER || "ollama").toLowerCase();
 const OLLAMA_BASE_URL = (process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434").replace(/\/$/, "");
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "gemma3:1b";
@@ -139,19 +140,28 @@ async function handleAppsScriptSync(request, response) {
     sendJson(response, 400, { ok: false, error: "Add a valid Google Apps Script web app URL." });
     return;
   }
-  const scriptResponse = await fetch(endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "text/plain;charset=utf-8" },
-    body: JSON.stringify({
-      action: body.action,
-      code: body.code,
-      pin: body.pin,
-      adminPin: body.adminPin,
-      name: body.name,
-      payload: body.payload,
-      clientUpdatedAt: body.clientUpdatedAt,
-    }),
-  });
+  let scriptResponse;
+  try {
+    scriptResponse = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({
+        action: body.action,
+        code: body.code,
+        pin: body.pin,
+        adminPin: body.adminPin,
+        name: body.name,
+        payload: body.payload,
+        clientUpdatedAt: body.clientUpdatedAt,
+      }),
+    });
+  } catch (error) {
+    sendJson(response, 502, {
+      ok: false,
+      error: `Could not reach Google tracker sync: ${error.message || "network request failed"}.`,
+    });
+    return;
+  }
   const text = await scriptResponse.text();
   let data = {};
   try {
@@ -206,19 +216,42 @@ const server = http.createServer(async (request, response) => {
   }
 });
 
-server.on("error", (error) => {
-  if (error.code === "EADDRINUSE") {
-    console.log(`Embers Tracker is already running at http://127.0.0.1:${PORT}/`);
-    return;
-  }
-  throw error;
-});
+let activePort = PORT;
 
-server.listen(PORT, () => {
-  console.log(`Ember Badge Studio running at http://127.0.0.1:${PORT}/`);
+function logServerReady(port) {
+  console.log(`Ember Badge Studio running at http://${HOST}:${port}/`);
   if (AI_PROVIDER === "openai") {
     console.log(process.env.OPENAI_API_KEY ? `OpenAI chat enabled with ${OPENAI_MODEL}.` : "OpenAI chat selected, but OPENAI_API_KEY is not set.");
   } else {
     console.log(`Ollama chat enabled with ${OLLAMA_MODEL} at ${OLLAMA_BASE_URL}.`);
   }
+}
+
+const ready = new Promise((resolve, reject) => {
+  function listen(port, attempts = 0) {
+    function onError(error) {
+      if (error.code === "EADDRINUSE" && attempts < 20) {
+        console.log(`Port ${port} is busy, trying ${port + 1}...`);
+        listen(port + 1, attempts + 1);
+        return;
+      }
+      reject(error);
+    }
+
+    server.once("error", onError);
+    server.listen(port, HOST, () => {
+      server.off("error", onError);
+      activePort = port;
+      logServerReady(port);
+      resolve(port);
+    });
+  }
+
+  listen(PORT);
 });
+
+module.exports = {
+  server,
+  ready,
+  getUrl: () => `http://${HOST}:${activePort}/`,
+};

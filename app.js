@@ -759,20 +759,25 @@ async function appScriptRequest(action, extra = {}) {
   const sync = appScriptSyncSettings();
   const endpoint = String(extra.endpoint || sync.endpoint || DEFAULT_APPS_SCRIPT_ENDPOINT).trim();
   if (!endpoint) throw new Error("Add the Apps Script web app URL first.");
-  const response = await fetch("/api/apps-script-sync", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      endpoint,
-      action,
-      code: extra.code ?? sync.trackerCode,
-      pin: extra.pin ?? sync.pin,
-      adminPin: extra.adminPin,
-      name: extra.name ?? sync.trackerName,
-      payload: extra.payload,
-      clientUpdatedAt: state.updatedAt || "",
-    }),
-  });
+  let response;
+  try {
+    response = await fetch("/api/apps-script-sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        endpoint,
+        action,
+        code: extra.code ?? sync.trackerCode,
+        pin: extra.pin ?? sync.pin,
+        adminPin: extra.adminPin,
+        name: extra.name ?? sync.trackerName,
+        payload: extra.payload,
+        clientUpdatedAt: state.updatedAt || "",
+      }),
+    });
+  } catch (error) {
+    throw new Error("Could not reach the local tracker service. Close other tracker windows, reopen the app, and try again.");
+  }
   const data = await response.json().catch(() => ({}));
   if (!response.ok || data.ok === false) throw new Error(data.error || `Sync request failed with status ${response.status}.`);
   return data;
