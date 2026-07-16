@@ -2585,6 +2585,7 @@ function renderAttendanceWorkflowDetail() {
           <button class="text-button" data-open-attendance-itinerary="${escapeAttr(event.id)}" type="button">View itinerary</button>
           <button class="primary-button" data-open-attendance-entry="${escapeAttr(event.id)}" type="button">${meeting?.attendanceSubmittedAt ? "Update attendance" : "Submit attendance"}</button>
           <button class="quiet-button" data-open-attendance-badges="${escapeAttr(event.id)}" type="button">Submit for badges</button>
+          ${event.source === "logged" && meeting ? `<button class="text-button" data-remove-meeting="${escapeAttr(meeting.id)}" type="button">Delete</button>` : ""}
         </div>
       </header>
       <div class="tag-row">
@@ -2859,6 +2860,7 @@ function renderCalendarEventDetail(records, kidById) {
         ${selected.source === "scheduled" ? `<button class="text-button" data-remove-scheduled-event="${escapeAttr(selected.id)}" type="button">Delete</button>` : ""}
         ${selected.source === "planned" ? `<button class="text-button" data-remove-plan="${escapeAttr(selected.planId)}" type="button">Delete</button>` : ""}
         ${selected.source === "attendance" ? `<button class="primary-button" data-complete-meeting="${escapeAttr(selected.meetingId)}" type="button">Complete meeting</button>` : ""}
+        ${selected.source === "logged" ? `<button class="text-button" data-remove-meeting="${escapeAttr(selected.meetingId)}" type="button">Delete</button>` : ""}
       </header>
       <section class="calendar-detail-section">
         <h4>Missed</h4>
@@ -3427,6 +3429,7 @@ function renderPlanningCalendarDetail() {
             <button class="text-button" data-open-itinerary-event="${escapeAttr(selectedEvent.id)}" type="button">Itinerary</button>
             <button class="text-button" data-calendar-event="${escapeAttr(selectedEvent.id)}" type="button">Open event</button>
             ${selectedEvent.source === "attendance" ? `<button class="primary-button" data-complete-meeting="${escapeAttr(selectedEvent.meetingId)}" type="button">Complete meeting</button>` : ""}
+            ${selectedEvent.source === "logged" ? `<button class="text-button" data-remove-meeting="${escapeAttr(selectedEvent.meetingId)}" type="button">Delete</button>` : ""}
           </div>
         </header>
         ${selectedEvent.summary ? `<p>${escapeHtml(selectedEvent.summary)}</p>` : ""}
@@ -5586,7 +5589,12 @@ document.addEventListener("click", (event) => {
 
   const removeMeeting = event.target.closest("[data-remove-meeting]");
   if (removeMeeting) {
+    const meeting = state.meetings.find((item) => item.id === removeMeeting.dataset.removeMeeting);
+    if (!meeting || !confirm(`Delete "${meeting.title || "this meeting"}"? Badge credits and patrol points from this meeting will be recalculated.`)) return;
     state.meetings = state.meetings.filter((meeting) => meeting.id !== removeMeeting.dataset.removeMeeting);
+    selectedCalendarEventId = "";
+    selectedAttendanceEventId = "";
+    selectedPlanningEventId = "";
     saveState();
     renderAll();
     showToast("Meeting deleted and credits recalculated.");
