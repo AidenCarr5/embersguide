@@ -7,7 +7,7 @@
     <title>Tracker</title>
     <link rel="icon" type="image/png" href="./assets/girl-guides-trefoil-icon.png" />
     <link rel="apple-touch-icon" href="./assets/girl-guides-trefoil-icon-1024.png" />
-    <link rel="stylesheet" href="./styles.css?v=20260612-sync-protection" />
+    <link rel="stylesheet" href="./styles.css?v=20260715-attendance-flow" />
     <script src="https://apis.google.com/js/api.js" async defer></script>
     <script src="https://accounts.google.com/gsi/client" async defer></script>
   </head>
@@ -24,13 +24,13 @@
         <button class="quiet-button" id="exportJsonTop" type="button">Save backup</button>
         <button class="quiet-button" data-share-tracker type="button">Share tracker</button>
         <button class="quiet-button" id="switchTrackerTop" type="button">Switch tracker</button>
-        <button class="primary-button" data-tab-target="log" type="button">Log meeting</button>
+        <button class="primary-button" data-tab-target="log" type="button">Attendance</button>
       </div>
     </header>
 
     <nav class="tabs" aria-label="Main sections">
       <button class="tab" data-tab-target="planning" type="button">Planning</button>
-      <button class="tab" data-tab-target="log" type="button">Log meeting</button>
+      <button class="tab" data-tab-target="log" type="button">Attendance</button>
       <button class="tab" data-tab-target="kid-badges" type="button">Ember Badges</button>
       <button class="tab" data-tab-target="patrol-points" type="button">Patrol Points</button>
       <button class="tab" data-tab-target="attendance" type="button">Roster</button>
@@ -118,11 +118,36 @@
       </section>
 
       <section id="log" class="view">
+        <section class="surface attendance-calendar-workflow">
+          <div class="section-heading">
+            <div>
+              <h2>Attendance calendar</h2>
+              <span class="small-note">Double-click an event to submit attendance for that day.</span>
+            </div>
+            <div class="inline-actions">
+              <button class="quiet-button" id="attendanceWorkflowPrev" type="button">Prev</button>
+              <button class="quiet-button" id="attendanceWorkflowToday" type="button">Today</button>
+              <button class="quiet-button" id="attendanceWorkflowNext" type="button">Next</button>
+            </div>
+          </div>
+          <div class="calendar-heading-row">
+            <h3 id="attendanceWorkflowMonthLabel"></h3>
+          </div>
+          <div id="attendanceWorkflowCalendar" class="calendar-month-grid"></div>
+          <div id="attendanceWorkflowDetail" class="calendar-detail"></div>
+        </section>
+      </section>
+
+      <section id="attendance-entry" class="view hidden-view">
         <form id="meetingForm" class="meeting-layout">
           <section class="surface">
+            <input id="meetingEventId" type="hidden" />
             <div class="section-heading">
-              <h2>Meeting details</h2>
-              <span class="small-note">Credits selected below go to Embers marked present.</span>
+              <div>
+                <h2>Meeting attendance</h2>
+                <span class="small-note">Submit attendance first. Badge progress updates only after Submit for badges.</span>
+              </div>
+              <button class="text-button" id="returnToAttendanceCalendar" type="button">Back to calendar</button>
             </div>
             <div class="field-grid">
               <label>
@@ -142,7 +167,7 @@
 
           <section class="surface">
             <div class="section-heading">
-              <h2>Badges worked on today</h2>
+              <h2>Badge ideas for completion</h2>
               <div class="picker-controls">
                 <input id="badgeTileSearch" class="compact-input" type="search" placeholder="Search badges" />
                 <button class="quiet-button" id="selectShownBadges" type="button">Select all shown</button>
@@ -164,6 +189,7 @@
           <section class="surface">
             <div class="section-heading">
               <h2>Attendance</h2>
+              <span class="small-note">Use Partial meeting when someone attended only some activities, then choose which badge goals they earned.</span>
               <div class="inline-actions">
                 <button class="quiet-button" id="markAllPresent" type="button">All present</button>
                 <button class="quiet-button" id="markAllAbsent" type="button">Clear</button>
@@ -173,7 +199,8 @@
           </section>
 
           <div class="form-footer">
-            <button class="primary-button" type="submit">Save meeting and calculate</button>
+            <button class="primary-button" id="meetingSubmitButton" type="submit">Submit attendance</button>
+            <button class="quiet-button" id="submitBadgesButton" type="button">Submit for badges</button>
           </div>
         </form>
       </section>
@@ -183,7 +210,7 @@
           <section class="surface">
             <div class="section-heading">
               <h2>Weekly planning</h2>
-              <span class="small-note">Plan future meetings without awarding badge credit yet.</span>
+              <span class="small-note">Plan future meetings without awarding badge credit or choosing badges yet.</span>
             </div>
             <form id="planningForm" class="badge-form">
               <input id="planningEditId" type="hidden" />
@@ -202,7 +229,7 @@
                 <textarea id="planningNotes" rows="4" placeholder="Activities, supplies, patrol jobs, leader notes, reminders"></textarea>
               </label>
               <div class="section-heading">
-                <h3>Badges to work toward</h3>
+                <h3>Badges to work toward <span class="optional-label">Optional</span></h3>
                 <div class="picker-controls">
                   <input id="planningBadgeSearch" class="compact-input" type="search" placeholder="Search badges" />
                   <button class="quiet-button" id="planningSelectShown" type="button">Select shown</button>
@@ -229,7 +256,7 @@
             </div>
             <div class="calendar-heading-row">
               <h3 id="planningCalendarMonthLabel"></h3>
-              <span class="small-note">Click a date to start a plan, or click a plan to edit or log it.</span>
+              <span class="small-note">Click a date to start a plan, or click a plan to edit badges or submit attendance.</span>
             </div>
             <div id="planningCalendar" class="calendar-month-grid"></div>
             <div id="planningCalendarDetail" class="calendar-detail"></div>
@@ -796,6 +823,41 @@
       </form>
     </div>
 
+    <div id="completeMeetingModal" class="modal-backdrop" hidden>
+      <form id="completeMeetingForm" class="event-modal complete-meeting-modal" role="dialog" aria-modal="true" aria-labelledby="completeMeetingTitle">
+        <header>
+          <div>
+            <p class="eyebrow">Complete meeting</p>
+            <h2 id="completeMeetingTitle">Verify badges</h2>
+          </div>
+          <button class="text-button" id="closeCompleteMeeting" type="button">Close</button>
+        </header>
+        <input id="completeMeetingId" type="hidden" />
+        <p class="muted" id="completeMeetingSummary">Confirm the badges that were completed, then choose which Embers should receive each badge credit.</p>
+        <section>
+          <div class="section-heading">
+            <h3>Badges completed</h3>
+            <input id="completeBadgeSearch" class="compact-input" type="search" placeholder="Search badges" />
+          </div>
+          <div id="completeBadgeChecklist" class="modal-check-grid"></div>
+        </section>
+        <section>
+          <div class="section-heading">
+            <h3>Credit by Ember</h3>
+            <div class="inline-actions">
+              <button class="quiet-button" id="completeAllPresent" type="button">Credit present</button>
+              <button class="quiet-button" id="completeClearCredits" type="button">Clear</button>
+            </div>
+          </div>
+          <div id="completeKidBadgeMatrix" class="completion-matrix-wrap"></div>
+        </section>
+        <footer>
+          <button class="quiet-button" id="saveAttendanceOnly" type="button">Keep attendance only</button>
+          <button class="primary-button" type="submit">Complete meeting</button>
+        </footer>
+      </form>
+    </div>
+
     <div id="switchTrackerModal" class="modal-backdrop" hidden>
       <section class="event-modal switch-tracker-modal" role="dialog" aria-modal="true" aria-labelledby="switchTrackerTitle">
         <header>
@@ -854,7 +916,7 @@
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <script src="./branch-badge-catalog.js?v=20260612-branch-catalog"></script>
     <script src="./badge-knowledge.js?v=20260612-sync-protection"></script>
-    <script src="./app.js?v=20260612-sync-protection"></script>
+    <script src="./app.js?v=20260715-attendance-flow"></script>
   </body>
 </html>
 

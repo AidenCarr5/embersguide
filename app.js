@@ -422,6 +422,10 @@ let selectedPlanningEventId = "";
 let selectedPlanningDate = "";
 let modalEventId = "";
 let modalBadgeSelection = new Set();
+let completionMeetingId = "";
+let completionBadgeSelection = new Set();
+let completionBadgeCredits = new Map();
+let completionBadgeKidIds = {};
 let selectedMeetingBadgeIds = new Set();
 let selectedMeetingBadgeCredits = new Map();
 let planningBadgeSelection = new Set();
@@ -431,6 +435,8 @@ let itineraryReturnTab = "planning";
 let chatHistory = [];
 let kidBadgeMode = "progress";
 let attendanceView = "roster";
+let selectedAttendanceEventId = "";
+let attendanceWorkflowCursor = startOfMonth(new Date());
 let patrolPointsMode = "earned";
 let selectedNoteId = "";
 let notesSaveTimer = null;
@@ -1717,7 +1723,10 @@ function switchTab(tabId) {
   if (tabId === "kid-badges") renderKidBadgeModeControls();
   if (tabId === "attendance") setAttendanceView(attendanceView);
   if (tabId === "patrol-points") renderPatrolPointsMode();
-  if (tabId === "log") queueMeetingBadgePanelSync();
+  if (tabId === "log") {
+    renderAttendanceWorkflowCalendar();
+    queueMeetingBadgePanelSync();
+  }
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
@@ -1896,6 +1905,37 @@ function badgeIdsForMeeting(meeting) {
   return badgeIdsForRequirementIds(meeting.requirementIds || []);
 }
 
+function meetingIsComplete(meeting = {}) {
+  return !meeting.attendanceSubmittedAt || Boolean(meeting.completedAt);
+}
+
+function meetingCandidateBadgeIds(meeting = {}) {
+  const ids = (meeting.pendingBadgeIds || []).length ? meeting.pendingBadgeIds : meetingIsComplete(meeting) ? badgeIdsForMeeting(meeting) : (meeting.badgeIds || []);
+  const valid = new Set(state.badges.filter((badge) => !isProgramAreaBadge(badge)).map((badge) => badge.id));
+  return [...new Set((ids || []).filter((id) => valid.has(id)))];
+}
+
+function meetingCandidateBadgeCredits(meeting = {}) {
+  const ids = meetingCandidateBadgeIds(meeting);
+  const credits = (meeting.pendingBadgeIds || []).length ? (meeting.pendingBadgeCredits || {}) : meetingIsComplete(meeting) ? (meeting.badgeCredits || {}) : (meeting.pendingBadgeCredits || meeting.badgeCredits || {});
+  return badgeCreditsForIds(ids, credits);
+}
+
+function defaultBadgeKidIdsForMeeting(meeting = {}, badgeIds = meetingCandidateBadgeIds(meeting)) {
+  const present = new Set(meeting.presentKidIds || []);
+  const validKids = new Set(state.kids.map((kid) => kid.id));
+  const hasPendingKidIds = meeting.pendingBadgeKidIds && typeof meeting.pendingBadgeKidIds === "object" && Object.keys(meeting.pendingBadgeKidIds).length > 0;
+  const saved = hasPendingKidIds
+    ? meeting.pendingBadgeKidIds
+    : meeting.badgeKidIds && typeof meeting.badgeKidIds === "object"
+      ? meeting.badgeKidIds
+      : {};
+  return Object.fromEntries((badgeIds || []).map((badgeId) => {
+    const selected = Array.isArray(saved[badgeId]) ? saved[badgeId].filter((kidId) => validKids.has(kidId)) : [...present].filter((kidId) => validKids.has(kidId));
+    return [badgeId, [...new Set(selected)]];
+  }));
+}
+
 function badgeCreditMax(badge) {
   if (!badge || isProgramAreaBadge(badge)) return 1;
   return Math.max(1, Math.min(Number(badge.requiredCount) || badge.requirements.length || 1, badge.requirements.length || 1));
@@ -1921,6 +1961,12 @@ function badgeCreditsFromSelection(selection, creditMap) {
 function badgeCreditCount(event, badge) {
   if (!badge || !(event.badgeIds || []).includes(badge.id)) return 0;
   return badgeCreditValue(badge, event.badgeCredits?.[badge.id] || 1);
+}
+
+function eventCreditsKidForBadge(event, kidId, badgeId) {
+  const selected = event.badgeKidIds?.[badgeId];
+  if (Array.isArray(selected)) return selected.includes(kidId);
+  return !(event.missingKidIds || []).includes(kidId);
 }
 
 function totalBadgeCredits(badgeIds = [], badgeCredits = {}) {
@@ -2085,8 +2131,10 @@ function automaticBadgeCredits(kidId, badge, throughDate = null) {
     .sort((a, b) => String(a.date).localeCompare(String(b.date)))
     .filter((event) => {
       if (throughDate && String(event.date) > throughDate) return false;
-      if ((event.missingKidIds || []).includes(kidId)) return false;
       return (event.badgeIds || []).includes(badge.id);
+    })
+    .filter((event) => {
+      return eventCreditsKidForBadge(event, kidId, badge.id);
     })
     .flatMap((event) => {
       const count = badgeCreditCount(event, badge);
@@ -2176,6 +2224,20 @@ function attendanceRate(kidId) {
   return `${Math.round((present / records.length) * 100)}%`;
 }
 
+function normalizedEventTitle(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function inferredSourceEventIdForMeeting(meeting = {}) {
+  if (meeting.sourceEventId) return meeting.sourceEventId;
+  const title = normalizedEventTitle(meeting.title);
+  if (!meeting.date || !title) return "";
+  const plan = (state.weeklyPlans || []).find((item) => item.date === meeting.date && normalizedEventTitle(item.title) === title);
+  if (plan) return `planned-${plan.id}`;
+  const scheduled = (state.scheduledEvents || []).find((item) => item.date === meeting.date && normalizedEventTitle(item.title) === title);
+  return scheduled?.id || "";
+}
+
 function allAttendanceEvents({ includeScheduled = false, includePlanned = false } = {}) {
   const imported = (state.attendanceRecords || []).map((record) => ({
     ...record,
@@ -2184,19 +2246,26 @@ function allAttendanceEvents({ includeScheduled = false, includePlanned = false 
     badgeCredits: badgeCreditsForIds(record.badgeIds || [], record.badgeCredits || {}),
     requirementIds: record.requirementIds || [],
   }));
-  const logged = state.meetings.map((meeting) => ({
-    id: `logged-attendance-${meeting.id}`,
-    date: meeting.date,
-    title: meeting.title,
-    summary: meeting.notes || "",
-    source: "logged",
-    badgeIds: badgeIdsForMeeting(meeting),
-    badgeCredits: badgeCreditsForIds(badgeIdsForMeeting(meeting), meeting.badgeCredits || {}),
-    requirementIds: meeting.requirementIds || [],
-    missingKidIds: state.kids
-      .filter((kid) => !(meeting.presentKidIds || []).includes(kid.id))
-      .map((kid) => kid.id),
-  }));
+  const logged = state.meetings.map((meeting) => {
+    const complete = meetingIsComplete(meeting);
+    const badgeIds = complete ? badgeIdsForMeeting(meeting) : [];
+    return {
+      id: `logged-attendance-${meeting.id}`,
+      date: meeting.date,
+      title: meeting.title,
+      summary: meeting.notes || "",
+      source: complete ? "logged" : "attendance",
+      meetingId: meeting.id,
+      sourceEventId: inferredSourceEventIdForMeeting(meeting),
+      badgeIds,
+      badgeCredits: badgeCreditsForIds(badgeIds, meeting.badgeCredits || {}),
+      badgeKidIds: complete ? defaultBadgeKidIdsForMeeting(meeting, badgeIds) : {},
+      requirementIds: complete ? (meeting.requirementIds || []) : [],
+      missingKidIds: state.kids
+        .filter((kid) => !(meeting.presentKidIds || []).includes(kid.id))
+        .map((kid) => kid.id),
+    };
+  });
   const scheduled = includeScheduled
     ? (state.scheduledEvents || []).map((event) => ({
         ...event,
@@ -2228,6 +2297,12 @@ function allAttendanceEvents({ includeScheduled = false, includePlanned = false 
     if (!b.date) return -1;
     return a.date.localeCompare(b.date);
   });
+}
+
+function displayAttendanceEvents(options = {}, extraSourceIds = []) {
+  const events = allAttendanceEvents(options);
+  const visibleSourceIds = new Set([...events.map((event) => event.id), ...extraSourceIds].filter(Boolean));
+  return events.filter((event) => !event.sourceEventId || !visibleSourceIds.has(event.sourceEventId));
 }
 
 function renderLogBadgeTiles() {
@@ -2278,17 +2353,325 @@ function renderLogBadgeTiles() {
   }).join("") || emptyState("No matching badges. Add or edit badges in the Badges tab.");
 }
 
+function collectAttendanceDraftFromGrid() {
+  const statusInputs = $$("[data-attendance-kid-id]");
+  const badgeIds = [...selectedMeetingBadgeIds].filter((id) => state.badges.some((badge) => badge.id === id));
+  const statusByKid = {};
+  const badgeKidIds = Object.fromEntries(badgeIds.map((badgeId) => [badgeId, []]));
+  if (!statusInputs.length) {
+    const presentKidIds = $$('input[name="presentKid"]:checked').map((input) => input.value);
+    presentKidIds.forEach((kidId) => {
+      statusByKid[kidId] = "present";
+      badgeIds.forEach((badgeId) => badgeKidIds[badgeId].push(kidId));
+    });
+    return { statusByKid, badgeKidIds, presentKidIds };
+  }
+  statusInputs.forEach((input) => {
+    const kidId = input.dataset.attendanceKidId;
+    const status = ["present", "partial", "absent"].includes(input.value) ? input.value : "present";
+    statusByKid[kidId] = status;
+    if (status === "present") {
+      badgeIds.forEach((badgeId) => badgeKidIds[badgeId].push(kidId));
+    }
+  });
+  $$("[data-attendance-badge-kid-id][data-attendance-badge-id]:checked").forEach((input) => {
+    const status = statusByKid[input.dataset.attendanceBadgeKidId];
+    const badgeId = input.dataset.attendanceBadgeId;
+    if (status === "partial" && badgeKidIds[badgeId]) badgeKidIds[badgeId].push(input.dataset.attendanceBadgeKidId);
+  });
+  Object.keys(badgeKidIds).forEach((badgeId) => {
+    badgeKidIds[badgeId] = [...new Set(badgeKidIds[badgeId])];
+  });
+  const presentKidIds = Object.entries(statusByKid)
+    .filter(([, status]) => status !== "absent")
+    .map(([kidId]) => kidId);
+  return { statusByKid, badgeKidIds, presentKidIds };
+}
+
+function attendanceStatusForKid(meeting, kidId, draftStatus = {}) {
+  if (draftStatus[kidId]) return draftStatus[kidId];
+  const saved = meeting?.attendanceStatus?.[kidId];
+  if (["present", "partial", "absent"].includes(saved)) return saved;
+  if (meeting) return (meeting.presentKidIds || []).includes(kidId) ? "present" : "absent";
+  return "present";
+}
+
+function attendanceBadgeKidIdsForMeeting(meeting, badgeIds = []) {
+  const hasPendingKidIds = meeting?.pendingBadgeKidIds && typeof meeting.pendingBadgeKidIds === "object" && Object.keys(meeting.pendingBadgeKidIds).length > 0;
+  const saved = hasPendingKidIds
+    ? meeting.pendingBadgeKidIds
+    : meeting?.badgeKidIds && typeof meeting.badgeKidIds === "object"
+      ? meeting.badgeKidIds
+      : {};
+  return Object.fromEntries((badgeIds || []).map((badgeId) => [badgeId, Array.isArray(saved[badgeId]) ? saved[badgeId] : null]));
+}
+
 function renderAttendanceGrid() {
   if (!state.kids.length) {
     $("#attendanceGrid").innerHTML = emptyState("No Embers entered yet.");
     return;
   }
-  $("#attendanceGrid").innerHTML = sortedKids().map((kid) => `
-    <label class="check-row">
-      <input type="checkbox" name="presentKid" value="${escapeAttr(kid.id)}" checked />
-      <span>${escapeHtml(kid.name)} <small class="muted">(${escapeHtml(emberYearLabel(kid.year))}${kid.patrol ? `, ${escapeHtml(kid.patrol)}` : ""})</small></span>
-    </label>
-  `).join("") || emptyState("Add Embers before logging attendance.");
+  const draft = collectAttendanceDraftFromGrid();
+  const hasDraftControls = $$("[data-attendance-kid-id]").length > 0;
+  const eventId = $("#meetingEventId")?.value || "";
+  const ref = eventRefById(eventId);
+  const meeting = linkedMeetingForEventId(eventId) || (ref?.type === "logged" ? ref.item : null);
+  const badgeIds = [...selectedMeetingBadgeIds].filter((id) => state.badges.some((badge) => badge.id === id));
+  const savedBadgeKidIds = attendanceBadgeKidIdsForMeeting(meeting, badgeIds);
+  const badges = badgeIds
+    .map((id) => state.badges.find((badge) => badge.id === id))
+    .filter(Boolean)
+    .sort(compareBadges);
+  $("#attendanceGrid").innerHTML = sortedKids().map((kid) => {
+    const status = attendanceStatusForKid(meeting, kid.id, draft.statusByKid);
+    return `
+    <article class="attendance-entry-row ${status === "partial" ? "is-partial" : status === "absent" ? "is-absent" : "is-present"}">
+      <div class="attendance-entry-main">
+        <div>
+          <strong>${escapeHtml(kid.name)}</strong>
+          <small class="muted">${escapeHtml(emberYearLabel(kid.year))}${kid.patrol ? `, ${escapeHtml(kid.patrol)}` : ""}</small>
+        </div>
+        <label>
+          Attendance
+          <select data-attendance-kid-id="${escapeAttr(kid.id)}" aria-label="${escapeAttr(`${kid.name} attendance`)}">
+            <option value="present" ${status === "present" ? "selected" : ""}>Full meeting</option>
+            <option value="partial" ${status === "partial" ? "selected" : ""}>Partial meeting</option>
+            <option value="absent" ${status === "absent" ? "selected" : ""}>Absent</option>
+          </select>
+        </label>
+      </div>
+      <div class="attendance-badge-credit-list">
+        ${badges.length ? badges.map((badge) => {
+          const draftSelected = draft.badgeKidIds[badge.id]?.includes(kid.id);
+          const savedIds = savedBadgeKidIds[badge.id];
+          const savedSelected = Array.isArray(savedIds) ? savedIds.includes(kid.id) : (!hasDraftControls && status !== "absent");
+          const checked = status === "present" ? true : status === "partial" ? (draftSelected || savedSelected) : false;
+          return `
+            <label class="attendance-badge-credit ${status === "partial" ? "" : "is-locked"}">
+              <input
+                type="checkbox"
+                data-attendance-badge-kid-id="${escapeAttr(kid.id)}"
+                data-attendance-badge-id="${escapeAttr(badge.id)}"
+                ${checked ? "checked" : ""}
+                ${status === "partial" ? "" : "disabled"}
+                aria-label="${escapeAttr(`${kid.name} earned ${badge.name}`)}"
+              />
+              <img src="${badgeImageSrc(badge)}" alt="" />
+              <span>${escapeHtml(badge.name)}</span>
+            </label>
+          `;
+        }).join("") : `<span class="small-note">Select badge goals above if partial attendance should receive specific badge credit.</span>`}
+      </div>
+    </article>
+  `;
+  }).join("") || emptyState("Add Embers before submitting attendance.");
+}
+
+function attendanceWorkflowEvents() {
+  return displayAttendanceEvents({ includeScheduled: true, includePlanned: true })
+    .filter((event) => event.date)
+    .sort((a, b) => {
+      const todayIso = today();
+      const aFuture = String(a.date) >= todayIso ? 0 : 1;
+      const bFuture = String(b.date) >= todayIso ? 0 : 1;
+      return aFuture - bFuture || String(a.date).localeCompare(String(b.date)) || String(a.title).localeCompare(String(b.title));
+    });
+}
+
+function linkedMeetingForEventId(eventId) {
+  if (!eventId) return null;
+  return state.meetings.find((meeting) => inferredSourceEventIdForMeeting(meeting) === eventId) || null;
+}
+
+function attendanceMeetingForEvent(event) {
+  if (!event) return null;
+  const ref = eventRefById(event.id);
+  if (ref?.type === "logged") return ref.item;
+  return linkedMeetingForEventId(event.id);
+}
+
+function attendanceEventStatusLines(event) {
+  const meeting = attendanceMeetingForEvent(event);
+  return {
+    attendance: meeting?.attendanceSubmittedAt ? "Attendance submitted" : "Attendance not submitted",
+    badges: meeting && meetingIsComplete(meeting) ? "Badges confirmed" : "Badges not confirmed",
+  };
+}
+
+function renderAttendanceWorkflowCalendar() {
+  const wrap = $("#attendanceWorkflowCalendar");
+  if (!wrap) return;
+  const events = attendanceWorkflowEvents();
+  if (!events.some((event) => event.id === selectedAttendanceEventId)) {
+    selectedAttendanceEventId = "";
+  }
+  const badgeById = new Map(state.badges.map((badge) => [badge.id, badge]));
+  const monthStart = startOfMonth(attendanceWorkflowCursor);
+  const start = new Date(monthStart);
+  start.setDate(start.getDate() - start.getDay());
+  const monthEnd = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0);
+  const end = new Date(monthEnd);
+  end.setDate(end.getDate() + (6 - end.getDay()));
+  const days = [];
+  for (let date = new Date(start); date <= end; date.setDate(date.getDate() + 1)) {
+    days.push(new Date(date));
+  }
+  $("#attendanceWorkflowMonthLabel").textContent = monthStart.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  const eventsByDate = new Map();
+  events.forEach((event) => {
+    if (!eventsByDate.has(event.date)) eventsByDate.set(event.date, []);
+    eventsByDate.get(event.date).push(event);
+  });
+  const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+    .map((day) => `<div class="calendar-weekday">${day}</div>`)
+    .join("");
+  const cells = days.map((date) => {
+    const iso = toIsoDate(date);
+    const dayEvents = (eventsByDate.get(iso) || []).sort((a, b) => String(a.title).localeCompare(String(b.title)));
+    const isMuted = date.getMonth() !== monthStart.getMonth();
+    return `
+      <article class="calendar-day ${isMuted ? "is-muted" : ""}">
+        <div class="calendar-day-number">${date.getDate()}</div>
+        ${dayEvents.map((event) => {
+          const ref = eventRefById(event.id);
+          const linkedMeeting = attendanceMeetingForEvent(event);
+          const displayBadgeIds = linkedMeeting ? meetingCandidateBadgeIds(linkedMeeting) : ref?.type === "logged" && !meetingIsComplete(ref.item) ? meetingCandidateBadgeIds(ref.item) : (event.badgeIds || []);
+          const badges = displayBadgeIds.map((id) => badgeById.get(id)).filter(Boolean);
+          const themeAttrs = calendarBadgeThemeAttrs(badges);
+          const status = attendanceEventStatusLines(event);
+          return `
+            <button class="calendar-event attendance-calendar-event ${event.id === selectedAttendanceEventId ? "is-selected" : ""} ${event.source === "planned" ? "is-planned" : event.source === "scheduled" ? "is-scheduled" : event.source === "logged" ? "is-logged" : ""} ${themeAttrs.className}" ${themeAttrs.style} data-attendance-event="${escapeAttr(event.id)}" type="button">
+              ${escapeHtml(event.title || "Untitled event")}
+              <span>${escapeHtml(status.attendance)}</span>
+              <span>${escapeHtml(status.badges)}</span>
+            </button>
+          `;
+        }).join("")}
+      </article>
+    `;
+  }).join("");
+  wrap.innerHTML = events.length ? weekdays + cells : emptyState("Add a planned or scheduled event first.");
+  renderAttendanceWorkflowDetail();
+}
+
+function badgeDisplayForAttendanceEvent(event) {
+  const ref = eventRefById(event?.id || "");
+  const linkedMeeting = event ? attendanceMeetingForEvent(event) : null;
+  const badgeIds = linkedMeeting ? meetingCandidateBadgeIds(linkedMeeting) : ref?.type === "logged" && !meetingIsComplete(ref.item) ? meetingCandidateBadgeIds(ref.item) : (event?.badgeIds || []);
+  const badgeCredits = linkedMeeting ? meetingCandidateBadgeCredits(linkedMeeting) : ref?.type === "logged" ? (event?.badgeCredits || {}) : badgeCreditsForIds(badgeIds, event?.badgeCredits || {});
+  return { badgeIds, badgeCredits };
+}
+
+function renderAttendanceWorkflowDetail() {
+  const detail = $("#attendanceWorkflowDetail");
+  if (!detail) return;
+  const event = attendanceWorkflowEvents().find((item) => item.id === selectedAttendanceEventId);
+  if (!event) {
+    detail.innerHTML = emptyState("Single-click an event to see actions. Double-click an event to update attendance.");
+    return;
+  }
+  const status = attendanceEventStatusLines(event);
+  const { badgeIds, badgeCredits } = badgeDisplayForAttendanceEvent(event);
+  const badges = badgeIds.map((id) => state.badges.find((badge) => badge.id === id)).filter(Boolean);
+  const meeting = attendanceMeetingForEvent(event);
+  detail.innerHTML = `
+    <article class="calendar-detail-card attendance-workflow-detail-card">
+      <header>
+        <div>
+          <h3>${escapeHtml(event.title || "Untitled event")}</h3>
+          <p class="muted">${formatDate(event.date)} - ${escapeHtml(event.source === "planned" ? "Planned meeting" : event.source === "scheduled" ? "Scheduled event" : event.source === "logged" ? "Completed meeting" : "Attendance event")}</p>
+        </div>
+        <div class="inline-actions">
+          <button class="text-button" data-open-attendance-itinerary="${escapeAttr(event.id)}" type="button">View itinerary</button>
+          <button class="primary-button" data-open-attendance-entry="${escapeAttr(event.id)}" type="button">${meeting?.attendanceSubmittedAt ? "Update attendance" : "Submit attendance"}</button>
+          <button class="quiet-button" data-open-attendance-badges="${escapeAttr(event.id)}" type="button">Submit for badges</button>
+        </div>
+      </header>
+      <div class="tag-row">
+        <span class="tag ${status.attendance.includes("not") ? "warning" : "earned"}">${escapeHtml(status.attendance)}</span>
+        <span class="tag ${status.badges.includes("not") ? "warning" : "earned"}">${escapeHtml(status.badges)}</span>
+        ${badges.map((badge) => `<span class="tag">${escapeHtml(badgeCreditTag(badge, badgeCredits))}</span>`).join("") || `<span class="tag warning">No badge goals selected</span>`}
+      </div>
+    </article>
+  `;
+}
+
+function setPresentKidsFromIds(presentKidIds = []) {
+  const present = new Set(presentKidIds);
+  const statusControls = $$("[data-attendance-kid-id]");
+  if (statusControls.length) {
+    statusControls.forEach((input) => {
+      input.value = present.has(input.dataset.attendanceKidId) ? "present" : "absent";
+    });
+    renderAttendanceGrid();
+    return;
+  }
+  $$('input[name="presentKid"]').forEach((input) => {
+    input.checked = present.has(input.value);
+  });
+}
+
+function setPatrolPointInputsFromMeeting(meeting = {}) {
+  const points = meeting.emberPoints || {};
+  $$("#patrolPointInputs input[data-patrol-kid-id]").forEach((input) => {
+    input.value = Number(points[input.dataset.patrolKidId]) || 0;
+  });
+  renderPatrolPointTotals();
+}
+
+function applyAttendanceEventToForm(eventId) {
+  const event = eventSnapshot(eventId);
+  const ref = eventRefById(eventId);
+  const linkedMeeting = linkedMeetingForEventId(eventId);
+  $("#meetingEventId").value = eventId || "";
+  if (!event) {
+    $("#meetingDate").value = today();
+    $("#meetingTitle").value = "";
+    $("#meetingNotes").value = "";
+    selectedMeetingBadgeIds = new Set();
+    selectedMeetingBadgeCredits = new Map();
+    renderLogBadgeTiles();
+    renderAttendanceGrid();
+    renderPatrolPoints();
+    $("#meetingSubmitButton").textContent = "Submit attendance";
+    return;
+  }
+  $("#meetingDate").value = event.date || today();
+  $("#meetingTitle").value = event.title || "";
+  $("#meetingNotes").value = event.summary || "";
+  if (linkedMeeting || ref?.type === "logged") {
+    const meeting = linkedMeeting || ref.item;
+    const badgeIds = meetingCandidateBadgeIds(meeting);
+    selectedMeetingBadgeIds = new Set(badgeIds);
+    selectedMeetingBadgeCredits = new Map(Object.entries(meetingCandidateBadgeCredits(meeting)));
+    renderAttendanceGrid();
+    renderPatrolPoints();
+    setPatrolPointInputsFromMeeting(meeting);
+    $("#meetingSubmitButton").textContent = meetingIsComplete(meeting) ? "Update attendance" : "Update attendance";
+  } else {
+    selectedMeetingBadgeIds = new Set((event.badgeIds || []).filter((id) => state.badges.some((badge) => badge.id === id)));
+    selectedMeetingBadgeCredits = new Map(Object.entries(badgeCreditsForIds(event.badgeIds || [], event.badgeCredits || {})));
+    renderAttendanceGrid();
+    const missing = new Set(event.missingKidIds || []);
+    setPresentKidsFromIds(state.kids.filter((kid) => !missing.has(kid.id)).map((kid) => kid.id));
+    renderPatrolPoints();
+    $("#meetingSubmitButton").textContent = "Submit attendance";
+  }
+  renderLogBadgeTiles();
+}
+
+function selectAttendanceEvent(eventId) {
+  selectedAttendanceEventId = eventId;
+  renderAttendanceWorkflowCalendar();
+}
+
+function openAttendanceEntry(eventId) {
+  selectedAttendanceEventId = eventId;
+  attendanceWorkflowCursor = startOfMonth(new Date(`${eventSnapshot(eventId)?.date || today()}T12:00:00`));
+  renderAttendanceWorkflowCalendar();
+  applyAttendanceEventToForm(eventId);
+  switchTab("attendance-entry");
+  queueMeetingBadgePanelSync();
 }
 
 function renderKids() {
@@ -2364,7 +2747,7 @@ function renderKids() {
 
 function renderAttendanceCalendar() {
   const records = allAttendanceEvents();
-  const calendarRecords = allAttendanceEvents({ includeScheduled: true, includePlanned: true });
+  const calendarRecords = displayAttendanceEvents({ includeScheduled: true, includePlanned: true });
   const search = $("#attendanceSearch").value.trim().toLowerCase();
   const kidById = new Map(state.kids.map((kid) => [kid.id, kid]));
   const missedByKid = new Map(state.kids.map((kid) => [kid.id, []]));
@@ -2440,7 +2823,7 @@ function renderCalendarMonth(records, kidById) {
           return `
             <button class="calendar-event ${event.source === "planned" ? "is-planned" : event.source === "scheduled" ? "is-scheduled" : event.source === "logged" ? "is-logged" : ""} ${themeAttrs.className}" ${themeAttrs.style} data-calendar-event="${escapeAttr(event.id)}" type="button">
               ${escapeHtml(event.title)}
-              ${event.source === "planned" ? `<span>Planned</span>` : event.source !== "scheduled" ? `<span>${missed.length ? `${missed.length} away` : "All present"}</span>` : `<span>Scheduled</span>`}
+              ${event.source === "planned" ? `<span>Planned</span>` : event.source === "attendance" ? `<span>Attendance submitted</span>` : event.source !== "scheduled" ? `<span>${missed.length ? `${missed.length} away` : "All present"}</span>` : `<span>Scheduled</span>`}
             </button>
           `;
         }).join("")}
@@ -2471,10 +2854,11 @@ function renderCalendarEventDetail(records, kidById) {
       <header>
         <div>
           <h3>${escapeHtml(selected.title)}</h3>
-          <p class="muted">${formatDate(selected.date) || "Date not listed"} - ${selected.source === "planned" ? "Planned meeting" : selected.source === "scheduled" ? "Scheduled event" : selected.source === "excel" ? "Excel attendance" : "Logged meeting"}</p>
+          <p class="muted">${formatDate(selected.date) || "Date not listed"} - ${selected.source === "planned" ? "Planned meeting" : selected.source === "scheduled" ? "Scheduled event" : selected.source === "excel" ? "Excel attendance" : selected.source === "attendance" ? "Attendance submitted" : "Completed meeting"}</p>
         </div>
         ${selected.source === "scheduled" ? `<button class="text-button" data-remove-scheduled-event="${escapeAttr(selected.id)}" type="button">Delete</button>` : ""}
         ${selected.source === "planned" ? `<button class="text-button" data-remove-plan="${escapeAttr(selected.planId)}" type="button">Delete</button>` : ""}
+        ${selected.source === "attendance" ? `<button class="primary-button" data-complete-meeting="${escapeAttr(selected.meetingId)}" type="button">Complete meeting</button>` : ""}
       </header>
       <section class="calendar-detail-section">
         <h4>Missed</h4>
@@ -2496,7 +2880,7 @@ function renderCalendarEventDetail(records, kidById) {
         ` : overview ? "" : `<p class="muted">No itinerary notes recorded yet.</p>`}
       </section>
       <div class="tag-row">
-        ${selected.source === "planned" ? `<span class="tag">Planned only - no badge credit yet</span>` : selected.source === "scheduled" ? `<span class="tag">Attendance not recorded yet</span>` : ""}
+        ${selected.source === "planned" ? `<span class="tag">Planned only - no badge credit yet</span>` : selected.source === "scheduled" ? `<span class="tag">Attendance not recorded yet</span>` : selected.source === "attendance" ? `<span class="tag warning">Attendance saved - badge completion pending</span>` : ""}
       </div>
     </article>
   `;
@@ -2546,13 +2930,13 @@ function openEventModal(id) {
   if (!record || !ref) return;
   modalEventId = id;
   $("#eventEditId").value = id;
-  $("#eventModalSource").textContent = ref.type === "planned" ? "Planned meeting" : ref.type === "excel" ? "Excel attendance" : ref.type === "logged" ? "Logged meeting" : "Scheduled event";
+  $("#eventModalSource").textContent = ref.type === "planned" ? "Planned meeting" : ref.type === "excel" ? "Excel attendance" : ref.type === "logged" ? (meetingIsComplete(ref.item) ? "Completed meeting" : "Attendance submitted") : "Scheduled event";
   $("#eventModalTitle").textContent = record.title || "Edit event";
   $("#eventEditDate").value = record.date || today();
   $("#eventEditTitle").value = record.title || "";
   $("#eventEditNotes").value = record.summary || "";
 
-  modalBadgeSelection = new Set(record.badgeIds || []);
+  modalBadgeSelection = new Set(ref.type === "logged" && !meetingIsComplete(ref.item) ? meetingCandidateBadgeIds(ref.item) : (record.badgeIds || []));
   renderEventModalBadges();
 
   const missing = new Set(record.missingKidIds || []);
@@ -2597,13 +2981,26 @@ function saveEventModal() {
 
   if (ref.type === "logged") {
     const meeting = state.meetings[ref.index];
+    const presentKidIds = state.kids.filter((kid) => !missingKidIds.includes(kid.id)).map((kid) => kid.id);
     meeting.date = date;
     meeting.title = title;
     meeting.notes = summary;
-    meeting.badgeIds = badgeIds;
-    meeting.badgeCredits = badgeCredits;
-    meeting.requirementIds = requirementIds;
-    meeting.presentKidIds = state.kids.filter((kid) => !missingKidIds.includes(kid.id)).map((kid) => kid.id);
+    meeting.presentKidIds = presentKidIds;
+    if (meetingIsComplete(meeting)) {
+      meeting.badgeIds = badgeIds;
+      meeting.badgeCredits = badgeCredits;
+      meeting.requirementIds = requirementIds;
+      meeting.badgeKidIds = defaultBadgeKidIdsForMeeting(meeting, badgeIds);
+      badgeIds.forEach((badgeId) => {
+        if (!Array.isArray(meeting.badgeKidIds[badgeId])) meeting.badgeKidIds[badgeId] = [...presentKidIds];
+      });
+    } else {
+      meeting.pendingBadgeIds = badgeIds;
+      meeting.pendingBadgeCredits = badgeCredits;
+      meeting.badgeIds = [];
+      meeting.badgeCredits = {};
+      meeting.requirementIds = [];
+    }
   } else if (ref.type === "excel") {
     state.attendanceRecords[ref.index] = {
       ...state.attendanceRecords[ref.index],
@@ -2643,6 +3040,145 @@ function saveEventModal() {
   renderAll();
   setAttendanceView("calendar");
   showToast("Event updated.");
+}
+
+function renderCompletionBadges() {
+  const search = ($("#completeBadgeSearch")?.value || "").trim().toLowerCase();
+  const badges = state.badges
+    .filter((badge) => !isProgramAreaBadge(badge))
+    .filter((badge) => {
+      const haystack = `${badge.name} ${badge.area || ""} ${(badge.requirements || []).map((requirement) => requirement.title).join(" ")}`.toLowerCase();
+      return !search || haystack.includes(search);
+    })
+    .sort(compareBadges);
+  $("#completeBadgeChecklist").innerHTML = badges.map((badge) => {
+    const selected = completionBadgeSelection.has(badge.id);
+    const theme = categoryTheme(badge.area);
+    return `
+      <label class="check-row badge-plan-row ${selected ? "is-selected" : ""}" style="--category-fill: ${theme.fill}; --category-accent: ${theme.accent};">
+        <input type="checkbox" name="completeBadge" value="${escapeAttr(badge.id)}" ${selected ? "checked" : ""} />
+        <img src="${badgeImageSrc(badge)}" alt="" />
+        <span>${escapeHtml(badge.name)}<small class="muted">${escapeHtml(badge.area || "No area")} - ${escapeHtml(badgeEarnLabel(badge))}</small></span>
+        ${selected ? `
+          <span class="credit-count-control is-inline">
+            Activities
+            <input data-complete-badge-credit="${escapeAttr(badge.id)}" type="number" min="1" max="${badgeCreditMax(badge)}" step="1" value="${escapeAttr(badgeCreditValue(badge, completionBadgeCredits.get(badge.id) || 1))}" />
+          </span>
+        ` : ""}
+      </label>
+    `;
+  }).join("") || emptyState("No badges match that search.");
+}
+
+function renderCompletionKidBadgeMatrix() {
+  const meeting = state.meetings.find((item) => item.id === completionMeetingId);
+  const wrap = $("#completeKidBadgeMatrix");
+  if (!meeting || !wrap) return;
+  const badgeIds = [...completionBadgeSelection].filter((id) => state.badges.some((badge) => badge.id === id));
+  const badges = badgeIds.map((id) => state.badges.find((badge) => badge.id === id)).filter(Boolean).sort(compareBadges);
+  const kids = sortedKids();
+  const present = new Set(meeting.presentKidIds || []);
+  if (!badges.length) {
+    wrap.innerHTML = emptyState("Select completed badges to choose which Embers receive credit.");
+    return;
+  }
+  if (!kids.length) {
+    wrap.innerHTML = emptyState("Add Embers before completing badge credit.");
+    return;
+  }
+  wrap.innerHTML = `
+    <div class="badge-matrix-wrap completion-matrix" role="region" aria-label="Meeting badge credit by Ember">
+      <table class="badge-matrix is-summary">
+        <thead>
+          <tr>
+            <th class="sticky-col ember-col">Ember</th>
+            <th>Attendance</th>
+            ${badges.map((badge) => `
+              <th style="--category-fill: ${categoryTheme(badge.area).fill}; --category-accent: ${categoryTheme(badge.area).accent};">
+                <img src="${badgeImageSrc(badge)}" alt="" />
+                <span>${escapeHtml(badge.name)}</span>
+                <small>${escapeHtml(badge.area || "No area")}</small>
+              </th>
+            `).join("")}
+          </tr>
+        </thead>
+        <tbody>
+          ${kids.map((kid) => `
+            <tr>
+              <th class="sticky-col ember-col" scope="row">${escapeHtml(kid.name)}</th>
+              <td>${meeting.attendanceStatus?.[kid.id] === "partial" ? `<span class="tag warning">Partial</span>` : present.has(kid.id) ? `<span class="tag earned">Present</span>` : `<span class="tag warning">Absent</span>`}</td>
+              ${badges.map((badge) => {
+                const selectedKids = new Set(completionBadgeKidIds[badge.id] || []);
+                return `
+                  <td style="--category-fill: ${categoryTheme(badge.area).fill}; --category-accent: ${categoryTheme(badge.area).accent};">
+                    <label class="completion-credit-check">
+                      <input
+                        type="checkbox"
+                        data-complete-kid-id="${escapeAttr(kid.id)}"
+                        data-complete-badge-id="${escapeAttr(badge.id)}"
+                        ${selectedKids.has(kid.id) ? "checked" : ""}
+                        aria-label="${escapeAttr(`${kid.name} receives ${badge.name} credit`)}"
+                      />
+                      <span>${selectedKids.has(kid.id) ? "Credit" : "No credit"}</span>
+                    </label>
+                  </td>
+                `;
+              }).join("")}
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderCompletionModal() {
+  renderCompletionBadges();
+  renderCompletionKidBadgeMatrix();
+}
+
+function openCompleteMeetingModal(meetingId) {
+  const meeting = state.meetings.find((item) => item.id === meetingId);
+  if (!meeting) return;
+  completionMeetingId = meeting.id;
+  $("#completeMeetingId").value = meeting.id;
+  $("#completeMeetingTitle").textContent = meeting.title || "Verify badges";
+  $("#completeMeetingSummary").textContent = `${formatDate(meeting.date) || "No date"} - ${(meeting.presentKidIds || []).length} present. Confirm badge credit before marking the meeting complete.`;
+  $("#completeBadgeSearch").value = "";
+  completionBadgeSelection = new Set(meetingCandidateBadgeIds(meeting));
+  completionBadgeCredits = new Map(Object.entries(meetingCandidateBadgeCredits(meeting)));
+  completionBadgeKidIds = defaultBadgeKidIdsForMeeting(meeting, [...completionBadgeSelection]);
+  renderCompletionModal();
+  $("#completeMeetingModal").hidden = false;
+}
+
+function closeCompleteMeetingModal() {
+  completionMeetingId = "";
+  completionBadgeSelection = new Set();
+  completionBadgeCredits = new Map();
+  completionBadgeKidIds = {};
+  $("#completeMeetingModal").hidden = true;
+}
+
+function completeMeetingFromModal() {
+  const meeting = state.meetings.find((item) => item.id === $("#completeMeetingId").value);
+  if (!meeting) return;
+  const badgeIds = [...completionBadgeSelection].filter((id) => state.badges.some((badge) => badge.id === id));
+  const badgeCredits = badgeCreditsFromSelection(new Set(badgeIds), completionBadgeCredits);
+  meeting.badgeIds = badgeIds;
+  meeting.badgeCredits = badgeCredits;
+  meeting.requirementIds = requirementIdsForBadgeCredits(badgeCredits);
+  meeting.badgeKidIds = defaultBadgeKidIdsForMeeting({ ...meeting, badgeKidIds: completionBadgeKidIds }, badgeIds);
+  meeting.pendingBadgeIds = [];
+  meeting.pendingBadgeCredits = {};
+  meeting.pendingBadgeKidIds = {};
+  meeting.completedAt = new Date().toISOString();
+  selectedCalendarEventId = `logged-attendance-${meeting.id}`;
+  saveState();
+  closeCompleteMeetingModal();
+  renderAll();
+  setAttendanceView("calendar");
+  showToast(badgeIds.length ? "Meeting completed and badge progress updated." : "Meeting completed with attendance only.");
 }
 
 function renderBadges() {
@@ -2738,7 +3274,7 @@ function renderPlanningActivityPlanner() {
       <header>
         <div>
           <h3>Activity itinerary</h3>
-          <p class="muted">Select badges above to create activity slots for the meeting.</p>
+          <p class="muted">Add badges when you want badge-linked activity slots, or leave this plan as notes only.</p>
         </div>
       </header>
     `;
@@ -2800,7 +3336,8 @@ function renderPlanningCalendar() {
     plansByDate.get(plan.date).push(plan);
   });
   const eventsByDate = new Map();
-  allAttendanceEvents({ includeScheduled: true }).forEach((event) => {
+  const planSourceIds = (state.weeklyPlans || []).map((plan) => `planned-${plan.id}`);
+  displayAttendanceEvents({ includeScheduled: true }, planSourceIds).forEach((event) => {
     if (!event.date) return;
     if (!eventsByDate.has(event.date)) eventsByDate.set(event.date, []);
     eventsByDate.get(event.date).push(event);
@@ -2819,20 +3356,26 @@ function renderPlanningCalendar() {
         ${plans.map((plan) => {
           const badges = (plan.badgeIds || []).map((id) => badgeById.get(id)).filter(Boolean);
           const themeAttrs = calendarBadgeThemeAttrs(badges);
+          const status = attendanceEventStatusLines({ id: `planned-${plan.id}`, source: "planned" });
+          const creditCount = totalBadgeCredits(plan.badgeIds || [], plan.badgeCredits || {});
           return `
             <button class="calendar-event is-planned ${themeAttrs.className} ${selectedPlanningPlanId === plan.id ? "is-selected" : ""}" ${themeAttrs.style} data-planning-plan="${escapeAttr(plan.id)}" type="button">
               ${escapeHtml(plan.title || "Planned meeting")}
-              <span>${totalBadgeCredits(plan.badgeIds || [], plan.badgeCredits || {})} ${totalBadgeCredits(plan.badgeIds || [], plan.badgeCredits || {}) === 1 ? "activity" : "activities"}</span>
+              <span>${creditCount} ${creditCount === 1 ? "activity" : "activities"}</span>
+              <span>${escapeHtml(status.attendance)}</span>
+              <span>${escapeHtml(status.badges)}</span>
             </button>
           `;
         }).join("")}
         ${events.map((event) => {
           const badges = (event.badgeIds || []).map((id) => badgeById.get(id)).filter(Boolean);
           const themeAttrs = calendarBadgeThemeAttrs(badges);
+          const status = attendanceEventStatusLines(event);
           return `
             <button class="calendar-event ${event.source === "scheduled" ? "is-scheduled" : event.source === "logged" ? "is-logged" : ""} ${themeAttrs.className} ${selectedPlanningEventId === event.id ? "is-selected" : ""}" ${themeAttrs.style} data-planning-event="${escapeAttr(event.id)}" type="button">
               ${escapeHtml(event.title || "GG event")}
-              <span>${event.source === "scheduled" ? "Scheduled" : event.source === "logged" ? `${totalBadgeCredits(event.badgeIds || [], event.badgeCredits || {})} logged` : "Attendance"}</span>
+              <span>${escapeHtml(status.attendance)}</span>
+              <span>${escapeHtml(status.badges)}</span>
             </button>
           `;
         }).join("")}
@@ -2847,7 +3390,7 @@ function renderPlanningCalendarDetail() {
   const detail = $("#planningCalendarDetail");
   const badgeById = new Map(state.badges.map((badge) => [badge.id, badge]));
   const plans = [...(state.weeklyPlans || [])].sort((a, b) => String(a.date).localeCompare(String(b.date)));
-  const events = allAttendanceEvents({ includeScheduled: true });
+  const events = displayAttendanceEvents({ includeScheduled: true }, plans.map((plan) => `planned-${plan.id}`));
   const visibleMonth = toIsoDate(planningCalendarCursor).slice(0, 7);
   if (selectedPlanningDate && !selectedPlanningPlanId && !selectedPlanningEventId) {
     detail.innerHTML = `
@@ -2872,21 +3415,24 @@ function renderPlanningCalendarDetail() {
   if (selectedEvent) {
     selectedPlanningEventId = selectedEvent.id;
     const badges = (selectedEvent.badgeIds || []).map((id) => badgeById.get(id)).filter(Boolean);
+    const status = attendanceEventStatusLines(selectedEvent);
     detail.innerHTML = `
       <article class="calendar-detail-card planning-detail-card">
         <header>
           <div>
             <h3>${escapeHtml(selectedEvent.title || "GG event")}</h3>
-            <p class="muted">${formatDate(selectedEvent.date)} - ${selectedEvent.source === "scheduled" ? "Scheduled event" : selectedEvent.source === "logged" ? "Logged meeting" : "Attendance event"}</p>
+            <p class="muted">${formatDate(selectedEvent.date)} - ${selectedEvent.source === "scheduled" ? "Scheduled event" : selectedEvent.source === "logged" ? "Completed meeting" : selectedEvent.source === "attendance" ? "Attendance submitted" : "Attendance event"}</p>
           </div>
           <div class="inline-actions">
             <button class="text-button" data-open-itinerary-event="${escapeAttr(selectedEvent.id)}" type="button">Itinerary</button>
-            <button class="text-button" data-use-planning-event="${escapeAttr(selectedEvent.id)}" type="button">Use for log</button>
             <button class="text-button" data-calendar-event="${escapeAttr(selectedEvent.id)}" type="button">Open event</button>
+            ${selectedEvent.source === "attendance" ? `<button class="primary-button" data-complete-meeting="${escapeAttr(selectedEvent.meetingId)}" type="button">Complete meeting</button>` : ""}
           </div>
         </header>
         ${selectedEvent.summary ? `<p>${escapeHtml(selectedEvent.summary)}</p>` : ""}
         <div class="tag-row">
+          <span class="tag ${status.attendance.includes("not") ? "warning" : "earned"}">${escapeHtml(status.attendance)}</span>
+          <span class="tag ${status.badges.includes("not") ? "warning" : "earned"}">${escapeHtml(status.badges)}</span>
           ${badges.map((badge) => `<span class="tag">${escapeHtml(badgeCreditTag(badge, selectedEvent.badgeCredits || {}))}</span>`).join("") || `<span class="tag warning">No badge focus listed</span>`}
         </div>
       </article>
@@ -2904,6 +3450,7 @@ function renderPlanningCalendarDetail() {
   }
   selectedPlanningPlanId = selected.id;
   const badges = (selected.badgeIds || []).map((id) => badgeById.get(id)).filter(Boolean);
+  const status = attendanceEventStatusLines({ id: `planned-${selected.id}`, source: "planned" });
   detail.innerHTML = `
     <article class="calendar-detail-card planning-detail-card">
       <header>
@@ -2913,13 +3460,16 @@ function renderPlanningCalendarDetail() {
         </div>
         <div class="inline-actions">
           <button class="text-button" data-open-itinerary-plan="${escapeAttr(selected.id)}" type="button">Itinerary</button>
-          <button class="text-button" data-use-plan="${escapeAttr(selected.id)}" type="button">Use for log</button>
           <button class="text-button" data-edit-plan="${escapeAttr(selected.id)}" type="button">Edit</button>
           <button class="text-button" data-remove-plan="${escapeAttr(selected.id)}" type="button">Delete</button>
         </div>
       </header>
       ${selected.notes ? `<p>${escapeHtml(selected.notes)}</p>` : ""}
-      <div class="tag-row">${badges.map((badge) => `<span class="tag">${escapeHtml(badgeCreditTag(badge, selected.badgeCredits || {}))}</span>`).join("") || `<span class="tag warning">No badge focus yet</span>`}</div>
+      <div class="tag-row">
+        <span class="tag ${status.attendance.includes("not") ? "warning" : "earned"}">${escapeHtml(status.attendance)}</span>
+        <span class="tag ${status.badges.includes("not") ? "warning" : "earned"}">${escapeHtml(status.badges)}</span>
+        ${badges.map((badge) => `<span class="tag">${escapeHtml(badgeCreditTag(badge, selected.badgeCredits || {}))}</span>`).join("") || `<span class="tag warning">No badge focus yet</span>`}
+      </div>
     </article>
   `;
 }
@@ -3027,9 +3577,26 @@ function itineraryBadgeRows(badgeIds = [], badgeCredits = {}) {
     .sort(compareBadges)
     .map((badge) => {
       const theme = categoryTheme(badge.area);
-      return `<span class="tag" style="--category-fill: ${theme.fill}; --category-accent: ${theme.accent};">${escapeHtml(badgeCreditTag(badge, badgeCredits))}</span>`;
+      return `
+        <span class="itinerary-badge-chip" style="--category-fill: ${theme.fill}; --category-accent: ${theme.accent};">
+          <img src="${badgeImageSrc(badge)}" alt="" />
+          <span>${escapeHtml(badgeCreditTag(badge, badgeCredits))}<small>${escapeHtml(badge.area || "No area")}</small></span>
+        </span>
+      `;
     })
     .join("");
+}
+
+function expandedItineraryBadgeGoals(record = {}) {
+  const badgeById = new Map(state.badges.map((badge) => [badge.id, badge]));
+  return (record.badgeIds || [])
+    .map((id) => badgeById.get(id))
+    .filter((badge) => badge && !isProgramAreaBadge(badge))
+    .sort(compareBadges)
+    .flatMap((badge) => {
+      const count = badgeCreditValue(badge, record.badgeCredits?.[badge.id] || 1);
+      return Array.from({ length: count }, (_, index) => ({ badge, index, count }));
+    });
 }
 
 function itineraryActivitiesForRecord(record) {
@@ -3044,6 +3611,7 @@ function renderItinerary(record, options = {}) {
   const badgeCount = (record?.badgeIds || []).length;
   const activityCount = totalBadgeCredits(record?.badgeIds || [], record?.badgeCredits || {});
   const activities = itineraryActivitiesForRecord(record || {});
+  const badgeGoals = expandedItineraryBadgeGoals(record || {});
   $("#itineraryTitle").textContent = title;
   $("#itineraryContent").innerHTML = `
     <div class="itinerary-hero">
@@ -3071,11 +3639,21 @@ function renderItinerary(record, options = {}) {
     <article class="itinerary-block">
       <h3>Activity itinerary</h3>
       <div class="itinerary-activity-list">
-        ${activities.length ? activities.map((activity) => `
-          <article class="itinerary-activity">
-            <div class="linked-text">${activity.trim() ? linkifyText(activity) : `<span class="muted">Activity details not filled in yet.</span>`}</div>
+        ${activities.length ? activities.map((activity, index) => {
+          const goal = badgeGoals[index] || null;
+          const theme = goal ? categoryTheme(goal.badge.area) : categoryTheme("");
+          return `
+          <article class="itinerary-activity ${goal ? "has-badge-goal" : ""}" style="--category-fill: ${theme.fill}; --category-accent: ${theme.accent};">
+            <div class="itinerary-activity-goal">
+              ${goal ? `<img src="${badgeImageSrc(goal.badge)}" alt="" />` : `<span class="itinerary-goal-number">${index + 1}</span>`}
+            </div>
+            <div>
+              <span class="itinerary-goal-label">${goal ? `${escapeHtml(goal.badge.name)}${goal.count > 1 ? ` ${goal.index + 1}/${goal.count}` : ""}` : "Open activity"}</span>
+              <div class="linked-text">${activity.trim() ? linkifyText(activity) : `<span class="muted">Activity details not filled in yet.</span>`}</div>
+            </div>
           </article>
-        `).join("") : `<p class="muted">No activities planned yet.</p>`}
+        `;
+        }).join("") : `<p class="muted">No activities planned yet.</p>`}
       </div>
     </article>
     ${options.sourceLabel ? `<p class="small-note">${escapeHtml(options.sourceLabel)}</p>` : ""}
@@ -3086,7 +3664,7 @@ function openPlanItinerary(planId) {
   const plan = (state.weeklyPlans || []).find((item) => item.id === planId);
   if (!plan) return;
   itineraryReturnTab = "planning";
-  renderItinerary(plan, { sourceLabel: "Planned only - badge credit is awarded after this is logged." });
+  renderItinerary(plan, { sourceLabel: "Planned only - badge credit is awarded after attendance is completed." });
   switchTab("itinerary");
 }
 
@@ -3094,7 +3672,7 @@ function openEventItinerary(eventId) {
   const event = eventSnapshot(eventId);
   if (!event) return;
   itineraryReturnTab = "planning";
-  renderItinerary(event, { sourceLabel: event.source === "logged" ? "Logged meeting" : event.source === "scheduled" ? "Scheduled event" : "Attendance event" });
+  renderItinerary(event, { sourceLabel: event.source === "logged" ? "Completed meeting" : event.source === "attendance" ? "Attendance submitted" : event.source === "scheduled" ? "Scheduled event" : "Attendance event" });
   switchTab("itinerary");
 }
 
@@ -3857,34 +4435,6 @@ function loadPlanIntoForm(plan) {
   switchTab("planning");
 }
 
-function usePlanForLog(plan) {
-  $("#meetingDate").value = plan.date || today();
-  $("#meetingTitle").value = plan.title || "";
-  $("#meetingNotes").value = plan.notes || "";
-  selectedMeetingBadgeIds = new Set((plan.badgeIds || []).filter((id) => state.badges.some((badge) => badge.id === id)));
-  selectedMeetingBadgeCredits = new Map(Object.entries(badgeCreditsForIds(plan.badgeIds || [], plan.badgeCredits || {})));
-  switchTab("log");
-  renderLogBadgeTiles();
-  renderAttendanceGrid();
-  showToast("Weekly plan copied into Log meeting.");
-}
-
-function useEventForLog(event) {
-  $("#meetingDate").value = event.date || today();
-  $("#meetingTitle").value = event.title || "";
-  $("#meetingNotes").value = event.summary || "";
-  selectedMeetingBadgeIds = new Set((event.badgeIds || []).filter((id) => state.badges.some((badge) => badge.id === id)));
-  selectedMeetingBadgeCredits = new Map(Object.entries(badgeCreditsForIds(event.badgeIds || [], event.badgeCredits || {})));
-  switchTab("log");
-  renderLogBadgeTiles();
-  renderAttendanceGrid();
-  const missing = new Set(event.missingKidIds || []);
-  $$('input[name="presentKid"]').forEach((input) => {
-    input.checked = !missing.has(input.value);
-  });
-  showToast("Event copied into Log meeting.");
-}
-
 function renderKidBadgeFilter() {
   const select = $("#kidBadgeFilter");
   if (!select) return;
@@ -4222,7 +4772,7 @@ function chatResponseHtml(prompt) {
         `;
       }).join("")}
     </div>
-    <p class="muted">To count it, log the meeting, select the matching badge tiles, and mark only the Embers who attended. If you are planning ahead, save it in Planning first; it will show on the calendar without adding badge credit until logged.</p>
+    <p class="muted">To count it, submit attendance, confirm the matching badge tiles, and complete the meeting for the Embers who should receive credit. If you are planning ahead, save it in Planning first; it will show on the calendar without adding badge credit.</p>
   `;
 }
 
@@ -4542,7 +5092,7 @@ function renderPatrolPointsSheet() {
     return;
   }
   if (!meetings.length) {
-    wrap.innerHTML = emptyState("Log a meeting with patrol points to start the patrol points sheet.");
+    wrap.innerHTML = emptyState("Submit attendance with patrol points to start the patrol points sheet.");
     return;
   }
 
@@ -4618,18 +5168,24 @@ function renderHistory() {
   const badgeById = new Map(state.badges.map((badge) => [badge.id, badge]));
   const meetings = [...state.meetings].sort((a, b) => String(b.date).localeCompare(String(a.date)));
   $("#meetingHistory").innerHTML = meetings.map((meeting) => {
-    const badges = badgeIdsForMeeting(meeting).map((id) => badgeById.get(id)).filter(Boolean);
+    const complete = meetingIsComplete(meeting);
+    const displayBadgeIds = complete ? badgeIdsForMeeting(meeting) : meetingCandidateBadgeIds(meeting);
+    const displayBadgeCredits = complete ? (meeting.badgeCredits || {}) : meetingCandidateBadgeCredits(meeting);
+    const badges = displayBadgeIds.map((id) => badgeById.get(id)).filter(Boolean);
     return `
       <article class="history-item">
         <header>
           <div>
             <h3>${escapeHtml(meeting.title)}</h3>
-            <p class="muted">${formatDate(meeting.date)} - ${meeting.presentKidIds?.length || 0} present - ${totalBadgeCredits(badgeIdsForMeeting(meeting), meeting.badgeCredits || {})} badge activities</p>
+            <p class="muted">${formatDate(meeting.date)} - ${meeting.presentKidIds?.length || 0} present - ${complete ? `${totalBadgeCredits(displayBadgeIds, displayBadgeCredits)} badge activities` : "attendance submitted, badge completion pending"}</p>
           </div>
-          <button class="text-button" data-remove-meeting="${escapeAttr(meeting.id)}" type="button">Delete</button>
+          <div class="inline-actions">
+            ${complete ? "" : `<button class="primary-button" data-complete-meeting="${escapeAttr(meeting.id)}" type="button">Complete meeting</button>`}
+            <button class="text-button" data-remove-meeting="${escapeAttr(meeting.id)}" type="button">Delete</button>
+          </div>
         </header>
         ${meeting.notes ? `<p>${escapeHtml(meeting.notes)}</p>` : ""}
-        <div class="tag-row">${badges.map((badge) => `<span class="tag">${escapeHtml(badgeCreditTag(badge, meeting.badgeCredits || {}))}</span>`).join("")}</div>
+        <div class="tag-row">${badges.map((badge) => `<span class="tag ${complete ? "" : "warning"}">${escapeHtml(badgeCreditTag(badge, displayBadgeCredits))}</span>`).join("") || (complete ? "" : `<span class="tag warning">No badge choices yet</span>`)}</div>
       </article>
     `;
   }).join("") || emptyState("No meeting history yet.");
@@ -4666,6 +5222,7 @@ function renderAll() {
   renderLogBadgeTiles();
   renderPatrolPoints();
   renderAttendanceGrid();
+  renderAttendanceWorkflowCalendar();
   renderKids();
   renderAttendanceCalendar();
   renderBadges();
@@ -4676,6 +5233,7 @@ function renderAll() {
   renderCookieTracker();
   renderChatBadgeNeeds();
   renderHistory();
+  if (document.querySelector("#attendance-entry.view.is-active") && selectedAttendanceEventId) applyAttendanceEventToForm(selectedAttendanceEventId);
   renderDriveSyncSettings();
   renderAppScriptSyncSettings();
   renderBranchCopy();
@@ -4901,10 +5459,17 @@ function removeKidAndConnectedData(kidId) {
   state.patrolPointSpending = (state.patrolPointSpending || []).filter((entry) => entry.kidId !== kidId);
   state.meetings = state.meetings.map((meeting) => {
     const emberPoints = { ...(meeting.emberPoints || {}) };
+    const attendanceStatus = { ...(meeting.attendanceStatus || {}) };
     delete emberPoints[kidId];
+    delete attendanceStatus[kidId];
+    const badgeKidIds = Object.fromEntries(Object.entries(meeting.badgeKidIds || {}).map(([badgeId, kidIds]) => [badgeId, (kidIds || []).filter((id) => id !== kidId)]));
+    const pendingBadgeKidIds = Object.fromEntries(Object.entries(meeting.pendingBadgeKidIds || {}).map(([badgeId, kidIds]) => [badgeId, (kidIds || []).filter((id) => id !== kidId)]));
     const next = {
       ...meeting,
       presentKidIds: (meeting.presentKidIds || []).filter((id) => id !== kidId),
+      attendanceStatus,
+      badgeKidIds,
+      pendingBadgeKidIds,
       emberPoints,
     };
     recalculateMeetingPatrolPoints(next);
@@ -4993,6 +5558,11 @@ document.addEventListener("click", (event) => {
     state.meetings = state.meetings.map((meeting) => ({
       ...meeting,
       badgeIds: (meeting.badgeIds || []).filter((badgeId) => badgeId !== id),
+      pendingBadgeIds: (meeting.pendingBadgeIds || []).filter((badgeId) => badgeId !== id),
+      badgeCredits: Object.fromEntries(Object.entries(meeting.badgeCredits || {}).filter(([badgeId]) => badgeId !== id)),
+      pendingBadgeCredits: Object.fromEntries(Object.entries(meeting.pendingBadgeCredits || {}).filter(([badgeId]) => badgeId !== id)),
+      badgeKidIds: Object.fromEntries(Object.entries(meeting.badgeKidIds || {}).filter(([badgeId]) => badgeId !== id)),
+      pendingBadgeKidIds: Object.fromEntries(Object.entries(meeting.pendingBadgeKidIds || {}).filter(([badgeId]) => badgeId !== id)),
       requirementIds: (meeting.requirementIds || []).filter((reqId) => !requirementIds.has(reqId)),
     }));
     state.attendanceRecords = (state.attendanceRecords || []).map((record) => ({
@@ -5022,6 +5592,46 @@ document.addEventListener("click", (event) => {
     showToast("Meeting deleted and credits recalculated.");
   }
 
+  const completeMeeting = event.target.closest("[data-complete-meeting]");
+  if (completeMeeting) {
+    openCompleteMeetingModal(completeMeeting.dataset.completeMeeting);
+    return;
+  }
+
+  const attendanceEvent = event.target.closest("[data-attendance-event]");
+  if (attendanceEvent) {
+    if (event.detail > 1) {
+      openAttendanceEntry(attendanceEvent.dataset.attendanceEvent);
+      return;
+    }
+    selectAttendanceEvent(attendanceEvent.dataset.attendanceEvent);
+    return;
+  }
+
+  const attendanceItinerary = event.target.closest("[data-open-attendance-itinerary]");
+  if (attendanceItinerary) {
+    openEventItinerary(attendanceItinerary.dataset.openAttendanceItinerary);
+    return;
+  }
+
+  const attendanceEntry = event.target.closest("[data-open-attendance-entry]");
+  if (attendanceEntry) {
+    openAttendanceEntry(attendanceEntry.dataset.openAttendanceEntry);
+    return;
+  }
+
+  const attendanceBadges = event.target.closest("[data-open-attendance-badges]");
+  if (attendanceBadges) {
+    const sourceEvent = eventSnapshot(attendanceBadges.dataset.openAttendanceBadges);
+    const meeting = sourceEvent ? attendanceMeetingForEvent(sourceEvent) : null;
+    if (!meeting) {
+      showToast("Submit attendance before submitting badges.");
+      return;
+    }
+    openCompleteMeetingModal(meeting.id);
+    return;
+  }
+
   const calendarEvent = event.target.closest("[data-calendar-event]");
   if (calendarEvent) {
     selectedCalendarEventId = calendarEvent.dataset.calendarEvent;
@@ -5039,6 +5649,7 @@ document.addEventListener("click", (event) => {
       selectedMeetingBadgeCredits.set(id, 1);
     }
     renderLogBadgeTiles();
+    renderAttendanceGrid();
   }
 
   const removeScheduled = event.target.closest("[data-remove-scheduled-event]");
@@ -5048,12 +5659,6 @@ document.addEventListener("click", (event) => {
     saveState();
     renderAll();
     showToast("Scheduled event deleted.");
-  }
-
-  const usePlan = event.target.closest("[data-use-plan]");
-  if (usePlan) {
-    const plan = (state.weeklyPlans || []).find((item) => item.id === usePlan.dataset.usePlan);
-    if (plan) usePlanForLog(plan);
   }
 
   const editPlan = event.target.closest("[data-edit-plan]");
@@ -5099,13 +5704,6 @@ document.addEventListener("click", (event) => {
     return;
   }
 
-  const usePlanningEvent = event.target.closest("[data-use-planning-event]");
-  if (usePlanningEvent) {
-    const record = eventSnapshot(usePlanningEvent.dataset.usePlanningEvent);
-    if (record) useEventForLog(record);
-    return;
-  }
-
   const planningDate = event.target.closest("[data-planning-date]");
   if (planningDate) {
     selectPlanningCalendarDate(planningDate.dataset.planningDate);
@@ -5113,6 +5711,12 @@ document.addEventListener("click", (event) => {
 });
 
 document.addEventListener("dblclick", (event) => {
+  const attendanceEvent = event.target.closest("[data-attendance-event]");
+  if (attendanceEvent) {
+    event.preventDefault();
+    openAttendanceEntry(attendanceEvent.dataset.attendanceEvent);
+    return;
+  }
   const planningPlan = event.target.closest("[data-planning-plan]");
   if (planningPlan) {
     event.preventDefault();
@@ -5128,6 +5732,12 @@ document.addEventListener("dblclick", (event) => {
 
 document.addEventListener("keydown", (event) => {
   if (!["Enter", " "].includes(event.key)) return;
+  const attendanceEvent = event.target.closest("[data-attendance-event]");
+  if (attendanceEvent) {
+    event.preventDefault();
+    openAttendanceEntry(attendanceEvent.dataset.attendanceEvent);
+    return;
+  }
   const planningDate = event.target.closest("[data-planning-date]");
   if (!planningDate || event.target.closest("[data-planning-plan], [data-planning-event]")) return;
   event.preventDefault();
@@ -5139,34 +5749,83 @@ $("#planningDate").value = today();
 
 $("#meetingForm").addEventListener("submit", (event) => {
   event.preventDefault();
-  const badgeIds = [...selectedMeetingBadgeIds];
-  const badgeCredits = badgeCreditsFromSelection(selectedMeetingBadgeIds, selectedMeetingBadgeCredits);
-  const requirementIds = requirementIdsForBadgeCredits(badgeCredits);
-  const presentKidIds = $$('input[name="presentKid"]:checked').map((input) => input.value);
-  if (!state.kids.length) return showToast("Add Embers before logging a meeting.");
-  if (!badgeIds.length) return showToast("Select at least one badge.");
+  const pendingBadgeIds = [...selectedMeetingBadgeIds];
+  const pendingBadgeCredits = badgeCreditsFromSelection(selectedMeetingBadgeIds, selectedMeetingBadgeCredits);
+  const attendanceDraft = collectAttendanceDraftFromGrid();
+  const presentKidIds = attendanceDraft.presentKidIds;
+  const sourceEventId = $("#meetingEventId").value;
+  const sourceEvent = eventSnapshot(sourceEventId);
+  const sourceRef = eventRefById(sourceEventId);
+  const linkedMeeting = linkedMeetingForEventId(sourceEventId);
+  if (!state.kids.length) return showToast("Add Embers before submitting attendance.");
+  if (!sourceEvent) return showToast("Choose a calendar event first.");
   if (!presentKidIds.length) return showToast("Mark at least one Ember present.");
 
-  state.meetings.push({
-    id: uid("meeting"),
-    date: $("#meetingDate").value,
-    title: $("#meetingTitle").value.trim(),
-    notes: $("#meetingNotes").value.trim(),
-    badgeIds,
-    badgeCredits,
-    requirementIds,
-    presentKidIds,
-    patrolPoints: collectPatrolPoints(),
-    emberPoints: collectEmberPoints(),
-  });
+  let meeting = null;
+  if (linkedMeeting || sourceRef?.type === "logged") {
+    meeting = linkedMeeting || sourceRef.item;
+    meeting.date = $("#meetingDate").value;
+    meeting.title = $("#meetingTitle").value.trim();
+    meeting.notes = $("#meetingNotes").value.trim();
+    meeting.presentKidIds = presentKidIds;
+    meeting.attendanceStatus = attendanceDraft.statusByKid;
+    meeting.patrolPoints = collectPatrolPoints();
+    meeting.emberPoints = collectEmberPoints();
+    meeting.attendanceSubmittedAt = meeting.attendanceSubmittedAt || new Date().toISOString();
+    meeting.pendingBadgeIds = pendingBadgeIds;
+    meeting.pendingBadgeCredits = pendingBadgeCredits;
+    meeting.pendingBadgeKidIds = attendanceDraft.badgeKidIds;
+    if (!meetingIsComplete(meeting)) {
+      meeting.badgeIds = [];
+      meeting.badgeCredits = {};
+      meeting.requirementIds = [];
+    }
+  } else {
+    meeting = {
+      id: uid("meeting"),
+      date: $("#meetingDate").value,
+      title: $("#meetingTitle").value.trim(),
+      notes: $("#meetingNotes").value.trim(),
+      badgeIds: [],
+      badgeCredits: {},
+      pendingBadgeIds,
+      pendingBadgeCredits,
+      requirementIds: [],
+      presentKidIds,
+      attendanceStatus: attendanceDraft.statusByKid,
+      pendingBadgeKidIds: attendanceDraft.badgeKidIds,
+      patrolPoints: collectPatrolPoints(),
+      emberPoints: collectEmberPoints(),
+      sourceEventId,
+      attendanceSubmittedAt: new Date().toISOString(),
+      completedAt: "",
+    };
+    state.meetings.push(meeting);
+  }
   saveState();
   setDefaultMeetingDate();
-  $("#meetingTitle").value = "";
-  $("#meetingNotes").value = "";
   selectedMeetingBadgeIds = new Set();
   selectedMeetingBadgeCredits = new Map();
+  selectedCalendarEventId = `logged-attendance-${meeting.id}`;
+  selectedAttendanceEventId = meeting.sourceEventId || `logged-attendance-${meeting.id}`;
   renderAll();
-  showToast("Meeting saved. Badge progress is updated.");
+  applyAttendanceEventToForm(selectedAttendanceEventId);
+  showToast(linkedMeeting || sourceRef?.type === "logged" ? "Attendance updated. Badge progress was not changed." : "Attendance submitted. Badge progress was not changed.");
+});
+
+$("#submitBadgesButton").addEventListener("click", () => {
+  const eventId = $("#meetingEventId").value;
+  const ref = eventRefById(eventId);
+  const linkedMeeting = linkedMeetingForEventId(eventId);
+  const meeting = linkedMeeting || (ref?.type === "logged" ? ref.item : null);
+  if (!meeting) {
+    showToast("Submit attendance before submitting badges.");
+    return;
+  }
+  openCompleteMeetingModal(meeting.id);
+});
+
+$("#returnToAttendanceCalendar").addEventListener("click", () => {
   switchTab("log");
 });
 
@@ -5275,7 +5934,6 @@ $("#planningForm").addEventListener("submit", (event) => {
     activities: [...planningActivities],
   };
   if (!plan.title) return showToast("Add a meeting title.");
-  if (!plan.badgeIds.length) return showToast("Select at least one badge to plan toward.");
   const existingIndex = (state.weeklyPlans || []).findIndex((item) => item.id === id);
   if (existingIndex >= 0) state.weeklyPlans[existingIndex] = plan;
   else state.weeklyPlans = [...(state.weeklyPlans || []), plan];
@@ -5314,6 +5972,25 @@ $("#planningCalendarToday").addEventListener("click", () => {
   selectedPlanningDate = "";
   renderPlanningCalendar();
 });
+
+$("#attendanceWorkflowPrev").addEventListener("click", () => {
+  attendanceWorkflowCursor = addMonths(attendanceWorkflowCursor, -1);
+  selectedAttendanceEventId = "";
+  renderAttendanceWorkflowCalendar();
+});
+
+$("#attendanceWorkflowNext").addEventListener("click", () => {
+  attendanceWorkflowCursor = addMonths(attendanceWorkflowCursor, 1);
+  selectedAttendanceEventId = "";
+  renderAttendanceWorkflowCalendar();
+});
+
+$("#attendanceWorkflowToday").addEventListener("click", () => {
+  attendanceWorkflowCursor = startOfMonth(new Date());
+  selectedAttendanceEventId = "";
+  renderAttendanceWorkflowCalendar();
+});
+
 $("#planningBadgeChecklist").addEventListener("change", (event) => {
   const input = event.target.closest("input[name='planningBadge']");
   const creditInput = event.target.closest("[data-planning-badge-credit]");
@@ -5861,6 +6538,86 @@ $("#eventModal").addEventListener("click", (event) => {
   if (event.target.id === "eventModal") closeEventModal();
 });
 
+$("#completeMeetingForm").addEventListener("submit", (event) => {
+  event.preventDefault();
+  completeMeetingFromModal();
+});
+
+$("#closeCompleteMeeting").addEventListener("click", closeCompleteMeetingModal);
+
+$("#completeMeetingModal").addEventListener("click", (event) => {
+  if (event.target.id === "completeMeetingModal") closeCompleteMeetingModal();
+});
+
+$("#completeBadgeSearch").addEventListener("input", renderCompletionBadges);
+
+$("#completeBadgeChecklist").addEventListener("change", (event) => {
+  const creditInput = event.target.closest("[data-complete-badge-credit]");
+  if (creditInput) {
+    const badge = state.badges.find((item) => item.id === creditInput.dataset.completeBadgeCredit);
+    if (!badge) return;
+    creditInput.value = badgeCreditValue(badge, creditInput.value);
+    completionBadgeCredits.set(badge.id, Number(creditInput.value));
+    return;
+  }
+  const input = event.target.closest("input[name='completeBadge']");
+  if (!input) return;
+  const meeting = state.meetings.find((item) => item.id === completionMeetingId);
+  if (input.checked) {
+    completionBadgeSelection.add(input.value);
+    completionBadgeCredits.set(input.value, completionBadgeCredits.get(input.value) || 1);
+    if (!Array.isArray(completionBadgeKidIds[input.value])) completionBadgeKidIds[input.value] = [...(meeting?.presentKidIds || [])];
+  } else {
+    completionBadgeSelection.delete(input.value);
+    completionBadgeCredits.delete(input.value);
+    delete completionBadgeKidIds[input.value];
+  }
+  renderCompletionModal();
+});
+
+$("#completeBadgeChecklist").addEventListener("input", (event) => {
+  const input = event.target.closest("[data-complete-badge-credit]");
+  if (!input) return;
+  const badge = state.badges.find((item) => item.id === input.dataset.completeBadgeCredit);
+  if (!badge) return;
+  completionBadgeCredits.set(badge.id, badgeCreditValue(badge, input.value));
+});
+
+$("#completeKidBadgeMatrix").addEventListener("change", (event) => {
+  const input = event.target.closest("[data-complete-kid-id][data-complete-badge-id]");
+  if (!input) return;
+  const badgeId = input.dataset.completeBadgeId;
+  const kidId = input.dataset.completeKidId;
+  const selected = new Set(completionBadgeKidIds[badgeId] || []);
+  if (input.checked) selected.add(kidId);
+  else selected.delete(kidId);
+  completionBadgeKidIds[badgeId] = [...selected];
+  renderCompletionKidBadgeMatrix();
+});
+
+$("#completeAllPresent").addEventListener("click", () => {
+  const meeting = state.meetings.find((item) => item.id === completionMeetingId);
+  if (!meeting) return;
+  [...completionBadgeSelection].forEach((badgeId) => {
+    completionBadgeKidIds[badgeId] = [...(meeting.presentKidIds || [])];
+  });
+  renderCompletionKidBadgeMatrix();
+});
+
+$("#completeClearCredits").addEventListener("click", () => {
+  [...completionBadgeSelection].forEach((badgeId) => {
+    completionBadgeKidIds[badgeId] = [];
+  });
+  renderCompletionKidBadgeMatrix();
+});
+
+$("#saveAttendanceOnly").addEventListener("click", () => {
+  completionBadgeSelection = new Set();
+  completionBadgeCredits = new Map();
+  completionBadgeKidIds = {};
+  completeMeetingFromModal();
+});
+
 $("#closeSwitchTracker")?.addEventListener("click", closeSwitchTrackerModal);
 
 $("#switchTrackerModal")?.addEventListener("click", (event) => {
@@ -5980,6 +6737,7 @@ $("#selectShownBadges").addEventListener("click", () => {
     selectedMeetingBadgeCredits.set(badge.id, selectedMeetingBadgeCredits.get(badge.id) || 1);
   });
   renderLogBadgeTiles();
+  renderAttendanceGrid();
 });
 
 $("#clearShownBadges").addEventListener("click", () => {
@@ -5988,18 +6746,25 @@ $("#clearShownBadges").addEventListener("click", () => {
     selectedMeetingBadgeCredits.delete(badge.id);
   });
   renderLogBadgeTiles();
+  renderAttendanceGrid();
 });
 
 $("#markAllPresent").addEventListener("click", () => {
-  $$('input[name="presentKid"]').forEach((input) => {
-    input.checked = true;
+  $$("[data-attendance-kid-id]").forEach((input) => {
+    input.value = "present";
   });
+  renderAttendanceGrid();
 });
 
 $("#markAllAbsent").addEventListener("click", () => {
-  $$('input[name="presentKid"]').forEach((input) => {
-    input.checked = false;
+  $$("[data-attendance-kid-id]").forEach((input) => {
+    input.value = "absent";
   });
+  renderAttendanceGrid();
+});
+
+$("#attendanceGrid").addEventListener("change", (event) => {
+  if (event.target.closest("[data-attendance-kid-id]")) renderAttendanceGrid();
 });
 
 $("#clearData").addEventListener("click", () => {
