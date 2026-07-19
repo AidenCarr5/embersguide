@@ -1,7 +1,7 @@
 {
-  "version": "1.0.12",
+  "version": "1.0.13",
   "assets": {
-    "win32": "https://github.com/AidenCarr5/embersguide/releases/download/v1.0.12/Embers-Tracker-Setup-1.0.12.exe",
-    "darwin": "https://github.com/AidenCarr5/embersguide/releases/download/v1.0.12/Embers-Tracker-1.0.12.dmg"
+    "win32": "https://github.com/AidenCarr5/embersguide/releases/download/v1.0.13/Embers-Tracker-Setup-1.0.13.exe",
+    "darwin": "https://github.com/AidenCarr5/embersguide/releases/download/v1.0.13/Embers-Tracker-1.0.13.dmg"
   }
 }

@@ -2245,9 +2245,10 @@ function plannedMeetingHasAttendance(plan = {}) {
   return state.meetings.some((meeting) => meeting.attendanceSubmittedAt && inferredSourceEventIdForMeeting(meeting) === sourceId);
 }
 
-function scheduledBadgeCategoriesForKid() {
+function scheduledBadgeStats() {
   const badgeById = new Map(state.badges.map((badge) => [badge.id, badge]));
-  const counts = new Map();
+  const byBadge = new Map();
+  const byArea = new Map();
   (state.weeklyPlans || [])
     .filter((plan) => !plannedMeetingHasAttendance(plan))
     .forEach((plan) => {
@@ -2255,23 +2256,35 @@ function scheduledBadgeCategoriesForKid() {
       (plan.badgeIds || []).forEach((badgeId) => {
         const badge = badgeById.get(badgeId);
         if (!badge || isProgramAreaBadge(badge)) return;
+        const count = badgeCreditValue(badge, credits[badge.id] || 1);
         const area = badge.area || "No area";
-        counts.set(area, (counts.get(area) || 0) + badgeCreditValue(badge, credits[badge.id] || 1));
+        byBadge.set(badge.id, (byBadge.get(badge.id) || 0) + count);
+        byArea.set(area, (byArea.get(area) || 0) + count);
       });
     });
-  return [...counts.entries()]
-    .map(([area, count]) => ({ area, count, theme: categoryTheme(area) }))
-    .sort((a, b) => a.area.localeCompare(b.area));
+  return { byBadge, byArea };
 }
 
-function scheduledBadgeCategoryCell(kid) {
-  const categories = scheduledBadgeCategoriesForKid(kid);
-  if (!categories.length) return `<span class="scheduled-empty">0</span>`;
-  return `<div class="scheduled-category-list">${categories.map(({ area, count, theme }) => `
-    <span class="scheduled-category-chip" style="--category-fill: ${theme.fill}; --category-accent: ${theme.accent};">
-      <span>${escapeHtml(area)}</span><strong>${count}</strong>
-    </span>
-  `).join("")}</div>`;
+function scheduledBadgeMatrixCell(badge, stats) {
+  const count = isProgramAreaBadge(badge)
+    ? stats.byArea.get(badge.area || badge.name || "No area") || 0
+    : stats.byBadge.get(badge.id) || 0;
+  return `<span class="scheduled-badge-count ${count ? "has-scheduled-badges" : ""}">${count}</span>`;
+}
+
+function scheduledBadgeMatrixRow(badges = []) {
+  const stats = scheduledBadgeStats();
+  return `
+    <tr class="scheduled-badges-row">
+      <th class="sticky-col ember-col" scope="row">Scheduled badges</th>
+      <td class="patrol-col">Planned meetings</td>
+      ${badges.map((badge) => {
+        const theme = categoryTheme(badge.area);
+        const cellClass = isProgramAreaBadge(badge) ? "program-area-col" : "";
+        return `<td class="scheduled-badge-cell ${cellClass}" style="--category-fill: ${theme.fill}; --category-accent: ${theme.accent};">${scheduledBadgeMatrixCell(badge, stats)}</td>`;
+      }).join("")}
+    </tr>
+  `;
 }
 
 function allAttendanceEvents({ includeScheduled = false, includePlanned = false } = {}) {
@@ -4677,7 +4690,6 @@ function renderKidBadges() {
           <tr>
             <th class="sticky-col ember-col">Ember</th>
             <th class="patrol-col">Patrol</th>
-            <th class="scheduled-badges-col">Scheduled badges<small>Planned meetings</small></th>
             ${badges.map((badge) => `
               <th class="${isProgramAreaBadge(badge) ? "program-area-col" : ""}" style="--category-fill: ${categoryTheme(badge.area).fill}; --category-accent: ${categoryTheme(badge.area).accent};">
                 <img src="${badgeImageSrc(badge)}" alt="" />
@@ -4692,7 +4704,6 @@ function renderKidBadges() {
             <tr>
               <th class="sticky-col ember-col" scope="row">${escapeHtml(kid.name)}</th>
               <td class="patrol-col">${escapeHtml(kid.patrol || "")}</td>
-              <td class="scheduled-badges-col">${scheduledBadgeCategoryCell(kid)}</td>
               ${badges.map((badge) => {
                 const progress = badgeProgress(kid.id, badge);
                 const cellClass = [
@@ -4705,6 +4716,7 @@ function renderKidBadges() {
               }).join("")}
             </tr>
           `).join("")}
+          ${handoutMode ? "" : scheduledBadgeMatrixRow(badges)}
         </tbody>
       </table>
     </div>
