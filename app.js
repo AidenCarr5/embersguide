@@ -2245,10 +2245,33 @@ function plannedMeetingHasAttendance(plan = {}) {
   return state.meetings.some((meeting) => meeting.attendanceSubmittedAt && inferredSourceEventIdForMeeting(meeting) === sourceId);
 }
 
-function scheduledBadgeCountForKid() {
-  return (state.weeklyPlans || [])
+function scheduledBadgeCategoriesForKid() {
+  const badgeById = new Map(state.badges.map((badge) => [badge.id, badge]));
+  const counts = new Map();
+  (state.weeklyPlans || [])
     .filter((plan) => !plannedMeetingHasAttendance(plan))
-    .reduce((sum, plan) => sum + totalBadgeCredits(plan.badgeIds || [], badgeCreditsForIds(plan.badgeIds || [], plan.badgeCredits || {})), 0);
+    .forEach((plan) => {
+      const credits = badgeCreditsForIds(plan.badgeIds || [], plan.badgeCredits || {});
+      (plan.badgeIds || []).forEach((badgeId) => {
+        const badge = badgeById.get(badgeId);
+        if (!badge || isProgramAreaBadge(badge)) return;
+        const area = badge.area || "No area";
+        counts.set(area, (counts.get(area) || 0) + badgeCreditValue(badge, credits[badge.id] || 1));
+      });
+    });
+  return [...counts.entries()]
+    .map(([area, count]) => ({ area, count, theme: categoryTheme(area) }))
+    .sort((a, b) => a.area.localeCompare(b.area));
+}
+
+function scheduledBadgeCategoryCell(kid) {
+  const categories = scheduledBadgeCategoriesForKid(kid);
+  if (!categories.length) return `<span class="scheduled-empty">0</span>`;
+  return `<div class="scheduled-category-list">${categories.map(({ area, count, theme }) => `
+    <span class="scheduled-category-chip" style="--category-fill: ${theme.fill}; --category-accent: ${theme.accent};">
+      <span>${escapeHtml(area)}</span><strong>${count}</strong>
+    </span>
+  `).join("")}</div>`;
 }
 
 function allAttendanceEvents({ includeScheduled = false, includePlanned = false } = {}) {
@@ -4669,7 +4692,7 @@ function renderKidBadges() {
             <tr>
               <th class="sticky-col ember-col" scope="row">${escapeHtml(kid.name)}</th>
               <td class="patrol-col">${escapeHtml(kid.patrol || "")}</td>
-              <td class="scheduled-badges-col ${scheduledBadgeCountForKid(kid) ? "has-scheduled-badges" : ""}"><strong>${scheduledBadgeCountForKid(kid)}</strong></td>
+              <td class="scheduled-badges-col">${scheduledBadgeCategoryCell(kid)}</td>
               ${badges.map((badge) => {
                 const progress = badgeProgress(kid.id, badge);
                 const cellClass = [
