@@ -1,6 +1,6 @@
 {
   "name": "embers-tracker",
-  "version": "1.0.10",
+  "version": "1.0.11",
   "description": "Desktop launcher for Embers Tracker",
   "main": "desktop-main.js",
   "private": true,

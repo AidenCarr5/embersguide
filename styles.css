@@ -730,9 +730,14 @@ body.login-mode main {
 
 .planning-activity-row {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: auto minmax(150px, 0.62fr) minmax(0, 1fr) auto;
   gap: 10px;
   align-items: start;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--category-accent, var(--line)) 34%, white);
+  border-left: 6px solid var(--category-accent, var(--guide-blue-dark));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--category-fill, white) 50%, white);
 }
 
 .planning-activity-row strong {
@@ -746,8 +751,50 @@ body.login-mode main {
   font-size: 0.86rem;
 }
 
+.planning-activity-goal {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  min-height: 44px;
+}
+
+.planning-activity-goal img {
+  width: 38px;
+  height: 38px;
+  object-fit: contain;
+}
+
+.planning-activity-goal span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  color: var(--guide-blue-dark);
+  font-size: 0.82rem;
+  font-weight: 900;
+  line-height: 1.15;
+}
+
+.planning-activity-goal small {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 750;
+}
+
 .planning-activity-row textarea {
   min-height: 62px;
+}
+
+.planning-activity-actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+
+.planning-activity-actions .quiet-button {
+  min-height: 30px;
+  padding: 5px 8px;
+  font-size: 0.72rem;
 }
 
 .badge-plan-row {
@@ -1603,6 +1650,33 @@ textarea {
   color: var(--muted);
   text-align: left;
   background: #fff;
+}
+
+.badge-matrix .scheduled-badges-col {
+  min-width: 112px;
+  max-width: 112px;
+  color: var(--guide-blue-dark);
+  background: #eef8fb;
+}
+
+.badge-matrix td.scheduled-badges-col {
+  color: var(--muted);
+  background: #fff;
+}
+
+.badge-matrix td.scheduled-badges-col strong {
+  display: inline-grid;
+  min-width: 36px;
+  min-height: 32px;
+  place-items: center;
+  border-radius: 999px;
+  background: #edf1f4;
+  color: var(--muted);
+}
+
+.badge-matrix td.scheduled-badges-col.has-scheduled-badges strong {
+  background: var(--guide-aqua);
+  color: var(--guide-blue-dark);
 }
 
 .badge-matrix td {
@@ -3317,5 +3391,21 @@ th:last-child {
 
   .compact-input {
     max-width: none;
+  }
+}
+
+@media (max-width: 680px) {
+  .planning-activity-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .planning-activity-goal,
+  .planning-activity-row textarea,
+  .planning-activity-actions {
+    grid-column: 2;
+  }
+
+  .planning-activity-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

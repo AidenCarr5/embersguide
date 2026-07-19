@@ -431,6 +431,8 @@ let selectedMeetingBadgeCredits = new Map();
 let planningBadgeSelection = new Set();
 let planningBadgeCredits = new Map();
 let planningActivities = [];
+let planningActivityBadgeOrder = [];
+let planningActivityOrderWasMoved = false;
 let itineraryReturnTab = "planning";
 let chatHistory = [];
 let kidBadgeMode = "progress";
@@ -2238,6 +2240,17 @@ function inferredSourceEventIdForMeeting(meeting = {}) {
   return scheduled?.id || "";
 }
 
+function plannedMeetingHasAttendance(plan = {}) {
+  const sourceId = `planned-${plan.id}`;
+  return state.meetings.some((meeting) => meeting.attendanceSubmittedAt && inferredSourceEventIdForMeeting(meeting) === sourceId);
+}
+
+function scheduledBadgeCountForKid() {
+  return (state.weeklyPlans || [])
+    .filter((plan) => !plannedMeetingHasAttendance(plan))
+    .reduce((sum, plan) => sum + totalBadgeCredits(plan.badgeIds || [], badgeCreditsForIds(plan.badgeIds || [], plan.badgeCredits || {})), 0);
+}
+
 function allAttendanceEvents({ includeScheduled = false, includePlanned = false } = {}) {
   const imported = (state.attendanceRecords || []).map((record) => ({
     ...record,
@@ -2288,6 +2301,7 @@ function allAttendanceEvents({ includeScheduled = false, includePlanned = false 
         badgeIds: plan.badgeIds || [],
         badgeCredits: badgeCreditsForIds(plan.badgeIds || [], plan.badgeCredits || {}),
         activities: Array.isArray(plan.activities) ? plan.activities : [],
+        activityBadgeIds: Array.isArray(plan.activityBadgeIds) ? plan.activityBadgeIds : [],
         requirementIds: [],
       }))
     : [];
@@ -3244,19 +3258,71 @@ function renderPlanningBadges() {
 }
 
 function selectedPlanningBadgeIds() {
-  return [...planningBadgeSelection];
+  const validIds = new Set(state.badges.filter((badge) => !isProgramAreaBadge(badge)).map((badge) => badge.id));
+  return [...planningBadgeSelection].filter((id) => validIds.has(id));
 }
 
 function planningBadgeCreditObject() {
   return badgeCreditsFromSelection(planningBadgeSelection, planningBadgeCredits);
 }
 
+function orderedPlanningBadgeIds() {
+  const selected = selectedPlanningBadgeIds();
+  const selectedSet = new Set(selected);
+  const ordered = [];
+  planningActivityBadgeOrder.forEach((id) => {
+    if (selectedSet.has(id) && !ordered.includes(id)) ordered.push(id);
+  });
+  selected.forEach((id) => {
+    if (!ordered.includes(id)) ordered.push(id);
+  });
+  return ordered;
+}
+
+function sameIdOrder(left = [], right = []) {
+  return left.length === right.length && left.every((id, index) => id === right[index]);
+}
+
+function expandedBadgeActivityIds(badgeIds = [], badgeCredits = {}) {
+  const badgeById = new Map(state.badges.map((badge) => [badge.id, badge]));
+  return (badgeIds || []).flatMap((id) => {
+    const badge = badgeById.get(id);
+    if (!badge || isProgramAreaBadge(badge)) return [];
+    const count = badgeCreditValue(badge, badgeCredits[badge.id] || 1);
+    return Array.from({ length: count }, () => badge.id);
+  });
+}
+
+function orderedActivityBadgeIdsForRecord(record = {}) {
+  const desired = expandedBadgeActivityIds(record.badgeIds || [], record.badgeCredits || {});
+  const desiredCounts = new Map();
+  desired.forEach((id) => desiredCounts.set(id, (desiredCounts.get(id) || 0) + 1));
+  const source = Array.isArray(record.activityBadgeIds) && record.activityBadgeIds.length ? record.activityBadgeIds : desired;
+  const used = new Map();
+  const ordered = [];
+  source.forEach((id) => {
+    const allowed = desiredCounts.get(id) || 0;
+    const current = used.get(id) || 0;
+    if (!allowed || current >= allowed) return;
+    ordered.push(id);
+    used.set(id, current + 1);
+  });
+  desired.forEach((id) => {
+    const allowed = desiredCounts.get(id) || 0;
+    const current = used.get(id) || 0;
+    if (current >= allowed) return;
+    ordered.push(id);
+    used.set(id, current + 1);
+  });
+  return ordered;
+}
+
 function planningActivityCount() {
-  return totalBadgeCredits(selectedPlanningBadgeIds(), planningBadgeCreditObject());
+  return expandedBadgeActivityIds(selectedPlanningBadgeIds(), planningBadgeCreditObject()).length;
 }
 
 function readPlanningActivityInputs() {
-  $$("[data-planning-activity-index]").forEach((input) => {
+  $$('[data-planning-activity-index]').forEach((input) => {
     planningActivities[Number(input.dataset.planningActivityIndex)] = input.value;
   });
 }
@@ -3265,12 +3331,91 @@ function normalizePlanningActivities(count = planningActivityCount()) {
   planningActivities = Array.from({ length: count }, (_, index) => planningActivities[index] || "");
 }
 
+function syncPlanningActivitySlots() {
+  const desired = expandedBadgeActivityIds(selectedPlanningBadgeIds(), planningBadgeCreditObject());
+  const desiredCounts = new Map();
+  desired.forEach((id) => desiredCounts.set(id, (desiredCounts.get(id) || 0) + 1));
+  if (!planningActivityOrderWasMoved) {
+    const activityQueues = new Map();
+    planningActivityBadgeOrder.forEach((id, index) => {
+      if (!activityQueues.has(id)) activityQueues.set(id, []);
+      activityQueues.get(id).push(planningActivities[index] || "");
+    });
+    planningActivityBadgeOrder = desired;
+    planningActivities = desired.map((id) => {
+      const queue = activityQueues.get(id) || [];
+      return queue.length ? queue.shift() : "";
+    });
+    return;
+  }
+  const source = planningActivityBadgeOrder.length ? planningActivityBadgeOrder : desired;
+  const used = new Map();
+  const nextOrder = [];
+  const nextActivities = [];
+  source.forEach((id, index) => {
+    const allowed = desiredCounts.get(id) || 0;
+    const current = used.get(id) || 0;
+    if (!allowed || current >= allowed) return;
+    nextOrder.push(id);
+    nextActivities.push(planningActivities[index] || "");
+    used.set(id, current + 1);
+  });
+  desired.forEach((id) => {
+    const allowed = desiredCounts.get(id) || 0;
+    const current = used.get(id) || 0;
+    if (current >= allowed) return;
+    nextOrder.push(id);
+    nextActivities.push("");
+    used.set(id, current + 1);
+  });
+  planningActivityBadgeOrder = nextOrder;
+  planningActivities = nextActivities;
+}
+
+function removePlanningBadgeSlots(badgeIds) {
+  const removeIds = new Set(badgeIds || []);
+  readPlanningActivityInputs();
+  syncPlanningActivitySlots();
+  planningActivityBadgeOrder = planningActivityBadgeOrder.filter((id, index) => {
+    if (!removeIds.has(id)) return true;
+    planningActivities[index] = null;
+    return false;
+  });
+  planningActivities = planningActivities.filter((activity) => activity !== null);
+}
+
+function movePlanningActivity(index, direction) {
+  readPlanningActivityInputs();
+  syncPlanningActivitySlots();
+  const target = index + direction;
+  if (target < 0 || target >= planningActivityBadgeOrder.length) return;
+  [planningActivityBadgeOrder[index], planningActivityBadgeOrder[target]] = [planningActivityBadgeOrder[target], planningActivityBadgeOrder[index]];
+  [planningActivities[index], planningActivities[target]] = [planningActivities[target], planningActivities[index]];
+  planningActivityOrderWasMoved = true;
+  planningBadgeSelection = new Set(orderedPlanningBadgeIds());
+  renderPlanningActivityPlanner();
+}
+
+function activityGoalsForOrder(activityBadgeIds = []) {
+  const badgeById = new Map(state.badges.map((badge) => [badge.id, badge]));
+  const totals = new Map();
+  activityBadgeIds.forEach((id) => totals.set(id, (totals.get(id) || 0) + 1));
+  const seen = new Map();
+  return activityBadgeIds.map((id) => {
+    const badge = badgeById.get(id);
+    if (!badge) return null;
+    const index = seen.get(id) || 0;
+    seen.set(id, index + 1);
+    return { badge, index, count: totals.get(id) || 1 };
+  });
+}
+
 function renderPlanningActivityPlanner() {
   const wrap = $("#planningActivityPlanner");
   if (!wrap) return;
   readPlanningActivityInputs();
-  const count = planningActivityCount();
-  normalizePlanningActivities(count);
+  syncPlanningActivitySlots();
+  const count = planningActivityBadgeOrder.length;
   if (!count) {
     wrap.innerHTML = `
       <header>
@@ -3282,6 +3427,7 @@ function renderPlanningActivityPlanner() {
     `;
     return;
   }
+  const goals = activityGoalsForOrder(planningActivityBadgeOrder);
   wrap.innerHTML = `
     <header>
       <div>
@@ -3291,12 +3437,25 @@ function renderPlanningActivityPlanner() {
       <span class="tag">${count} total</span>
     </header>
     <div class="planning-activity-list">
-      ${planningActivities.map((activity, index) => `
-        <label class="planning-activity-row">
-          <strong>${index + 1}</strong>
-          <textarea data-planning-activity-index="${index}" rows="2" placeholder="Activity ${index + 1}: supplies, timing, instructions, or a link">${escapeHtml(activity)}</textarea>
-        </label>
-      `).join("")}
+      ${planningActivities.map((activity, index) => {
+        const goal = goals[index] || null;
+        const theme = goal ? categoryTheme(goal.badge.area) : categoryTheme("");
+        const goalLabel = goal ? `${goal.badge.name}${goal.count > 1 ? ` ${goal.index + 1}/${goal.count}` : ""}` : `Activity ${index + 1}`;
+        return `
+          <div class="planning-activity-row" style="--category-fill: ${theme.fill}; --category-accent: ${theme.accent};">
+            <strong>${index + 1}</strong>
+            <div class="planning-activity-goal">
+              ${goal ? `<img src="${badgeImageSrc(goal.badge)}" alt="" />` : ""}
+              <span>${escapeHtml(goalLabel)}<small>${goal ? escapeHtml(goal.badge.area || "No area") : "Open activity"}</small></span>
+            </div>
+            <textarea data-planning-activity-index="${index}" rows="2" placeholder="${escapeAttr(goalLabel)}: supplies, timing, instructions, or a link">${escapeHtml(activity)}</textarea>
+            <div class="planning-activity-actions" aria-label="Move activity">
+              <button class="quiet-button" data-planning-activity-move="up" data-planning-activity-index="${index}" type="button" ${index === 0 ? "disabled" : ""} title="Move up">Up</button>
+              <button class="quiet-button" data-planning-activity-move="down" data-planning-activity-index="${index}" type="button" ${index === count - 1 ? "disabled" : ""} title="Move down">Down</button>
+            </div>
+          </div>
+        `;
+      }).join("")}
     </div>
   `;
 }
@@ -3310,6 +3469,8 @@ function resetPlanningForm() {
   planningBadgeSelection = new Set();
   planningBadgeCredits = new Map();
   planningActivities = [];
+  planningActivityBadgeOrder = [];
+  planningActivityOrderWasMoved = false;
   selectedPlanningPlanId = "";
   selectedPlanningEventId = "";
   selectedPlanningDate = "";
@@ -3577,7 +3738,6 @@ function itineraryBadgeRows(badgeIds = [], badgeCredits = {}) {
   return (badgeIds || [])
     .map((id) => badgeById.get(id))
     .filter((badge) => badge && !isProgramAreaBadge(badge))
-    .sort(compareBadges)
     .map((badge) => {
       const theme = categoryTheme(badge.area);
       return `
@@ -3591,19 +3751,11 @@ function itineraryBadgeRows(badgeIds = [], badgeCredits = {}) {
 }
 
 function expandedItineraryBadgeGoals(record = {}) {
-  const badgeById = new Map(state.badges.map((badge) => [badge.id, badge]));
-  return (record.badgeIds || [])
-    .map((id) => badgeById.get(id))
-    .filter((badge) => badge && !isProgramAreaBadge(badge))
-    .sort(compareBadges)
-    .flatMap((badge) => {
-      const count = badgeCreditValue(badge, record.badgeCredits?.[badge.id] || 1);
-      return Array.from({ length: count }, (_, index) => ({ badge, index, count }));
-    });
+  return activityGoalsForOrder(orderedActivityBadgeIdsForRecord(record)).filter(Boolean);
 }
 
 function itineraryActivitiesForRecord(record) {
-  const count = totalBadgeCredits(record.badgeIds || [], record.badgeCredits || {});
+  const count = orderedActivityBadgeIdsForRecord(record).length;
   const saved = Array.isArray(record.activities) ? record.activities : [];
   return Array.from({ length: Math.max(count, saved.length) }, (_, index) => saved[index] || "");
 }
@@ -4428,6 +4580,10 @@ function loadPlanIntoForm(plan) {
   planningBadgeSelection = new Set(plan.badgeIds || []);
   planningBadgeCredits = new Map(Object.entries(badgeCreditsForIds(plan.badgeIds || [], plan.badgeCredits || {})));
   planningActivities = Array.isArray(plan.activities) ? [...plan.activities] : [];
+  const savedActivityBadgeOrder = Array.isArray(plan.activityBadgeIds) && plan.activityBadgeIds.length ? [...plan.activityBadgeIds] : [];
+  const defaultActivityBadgeOrder = expandedBadgeActivityIds(plan.badgeIds || [], badgeCreditsForIds(plan.badgeIds || [], plan.badgeCredits || {}));
+  planningActivityBadgeOrder = savedActivityBadgeOrder.length ? savedActivityBadgeOrder : defaultActivityBadgeOrder;
+  planningActivityOrderWasMoved = savedActivityBadgeOrder.length && !sameIdOrder(savedActivityBadgeOrder, defaultActivityBadgeOrder);
   selectedPlanningPlanId = plan.id;
   selectedPlanningEventId = "";
   selectedPlanningDate = "";
@@ -4498,6 +4654,7 @@ function renderKidBadges() {
           <tr>
             <th class="sticky-col ember-col">Ember</th>
             <th class="patrol-col">Patrol</th>
+            <th class="scheduled-badges-col">Scheduled badges<small>Planned meetings</small></th>
             ${badges.map((badge) => `
               <th class="${isProgramAreaBadge(badge) ? "program-area-col" : ""}" style="--category-fill: ${categoryTheme(badge.area).fill}; --category-accent: ${categoryTheme(badge.area).accent};">
                 <img src="${badgeImageSrc(badge)}" alt="" />
@@ -4512,6 +4669,7 @@ function renderKidBadges() {
             <tr>
               <th class="sticky-col ember-col" scope="row">${escapeHtml(kid.name)}</th>
               <td class="patrol-col">${escapeHtml(kid.patrol || "")}</td>
+              <td class="scheduled-badges-col ${scheduledBadgeCountForKid(kid) ? "has-scheduled-badges" : ""}"><strong>${scheduledBadgeCountForKid(kid)}</strong></td>
               ${badges.map((badge) => {
                 const progress = badgeProgress(kid.id, badge);
                 const cellClass = [
@@ -5581,6 +5739,8 @@ document.addEventListener("click", (event) => {
     state.weeklyPlans = (state.weeklyPlans || []).map((plan) => ({
       ...plan,
       badgeIds: (plan.badgeIds || []).filter((badgeId) => badgeId !== id),
+      badgeCredits: Object.fromEntries(Object.entries(plan.badgeCredits || {}).filter(([badgeId]) => badgeId !== id)),
+      activityBadgeIds: (plan.activityBadgeIds || []).filter((badgeId) => badgeId !== id),
     }));
     saveState();
     renderAll();
@@ -5930,16 +6090,17 @@ $("#badgeForm").addEventListener("submit", (event) => {
 $("#planningForm").addEventListener("submit", (event) => {
   event.preventDefault();
   readPlanningActivityInputs();
-  normalizePlanningActivities();
+  syncPlanningActivitySlots();
   const id = $("#planningEditId").value || uid("plan");
   const plan = {
     id,
     date: $("#planningDate").value,
     title: $("#planningTitle").value.trim(),
     notes: $("#planningNotes").value.trim(),
-    badgeIds: selectedPlanningBadgeIds(),
+    badgeIds: orderedPlanningBadgeIds(),
     badgeCredits: planningBadgeCreditObject(),
     activities: [...planningActivities],
+    activityBadgeIds: [...planningActivityBadgeOrder],
   };
   if (!plan.title) return showToast("Add a meeting title.");
   const existingIndex = (state.weeklyPlans || []).findIndex((item) => item.id === id);
@@ -6005,8 +6166,11 @@ $("#planningBadgeChecklist").addEventListener("change", (event) => {
   if (creditInput) {
     const badge = state.badges.find((item) => item.id === creditInput.dataset.planningBadgeCredit);
     if (!badge) return;
+    readPlanningActivityInputs();
+    syncPlanningActivitySlots();
     creditInput.value = badgeCreditValue(badge, creditInput.value);
     planningBadgeCredits.set(badge.id, Number(creditInput.value));
+    renderPlanningActivityPlanner();
     return;
   }
   if (!input) return;
@@ -6014,6 +6178,7 @@ $("#planningBadgeChecklist").addEventListener("change", (event) => {
     planningBadgeSelection.add(input.value);
     planningBadgeCredits.set(input.value, planningBadgeCredits.get(input.value) || 1);
   } else {
+    removePlanningBadgeSlots([input.value]);
     planningBadgeSelection.delete(input.value);
     planningBadgeCredits.delete(input.value);
   }
@@ -6024,10 +6189,17 @@ $("#planningBadgeChecklist").addEventListener("input", (event) => {
   if (!input) return;
   const badge = state.badges.find((item) => item.id === input.dataset.planningBadgeCredit);
   if (!badge) return;
+  readPlanningActivityInputs();
+  syncPlanningActivitySlots();
   planningBadgeCredits.set(badge.id, badgeCreditValue(badge, input.value));
   renderPlanningActivityPlanner();
 });
 $("#planningActivityPlanner").addEventListener("input", readPlanningActivityInputs);
+$("#planningActivityPlanner").addEventListener("click", (event) => {
+  const move = event.target.closest("[data-planning-activity-move]");
+  if (!move) return;
+  movePlanningActivity(Number(move.dataset.planningActivityIndex), move.dataset.planningActivityMove === "up" ? -1 : 1);
+});
 $("#planningSelectShown").addEventListener("click", () => {
   visiblePlanningBadges().forEach((badge) => {
     planningBadgeSelection.add(badge.id);
@@ -6036,7 +6208,9 @@ $("#planningSelectShown").addEventListener("click", () => {
   renderPlanningBadges();
 });
 $("#planningClearShown").addEventListener("click", () => {
-  visiblePlanningBadges().forEach((badge) => {
+  const badges = visiblePlanningBadges();
+  removePlanningBadgeSlots(badges.map((badge) => badge.id));
+  badges.forEach((badge) => {
     planningBadgeSelection.delete(badge.id);
     planningBadgeCredits.delete(badge.id);
   });
